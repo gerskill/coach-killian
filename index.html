@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1120">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Coach Killian">
+<title>Coach Killian</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1 id="title">Coach Killian</h1>
+  <div class="datenav" id="datenav">
+    <button class="icon-btn" id="prevDay" aria-label="Jour précédent">‹</button>
+    <button class="date-label" id="dateLabel">Aujourd'hui</button>
+    <button class="icon-btn" id="nextDay" aria-label="Jour suivant">›</button>
+  </div>
+</header>
+
+<main>
+  <!-- AUJOURD'HUI -->
+  <section class="view active" id="view-today">
+    <div class="card gauges">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 120 120" class="ring">
+          <circle cx="60" cy="60" r="52" class="ring-bg"/>
+          <circle cx="60" cy="60" r="52" class="ring-fg" id="kcalRing"/>
+        </svg>
+        <div class="ring-text"><b id="kcalVal">0</b><span id="kcalGoal">/ 3150 kcal</span><small id="kcalLeft"></small></div>
+      </div>
+      <div class="bars">
+        <div class="bar" data-k="p"><div class="bar-head"><span>Protéines</span><span class="bar-num"></span></div><div class="track"><div class="fill"></div></div></div>
+        <div class="bar" data-k="g"><div class="bar-head"><span>Glucides</span><span class="bar-num"></span></div><div class="track"><div class="fill"></div></div></div>
+        <div class="bar" data-k="l"><div class="bar-head"><span>Lipides</span><span class="bar-num"></span></div><div class="track"><div class="fill"></div></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Repas du jour</h2><button class="btn small" data-goto="add">+ Ajouter</button></div>
+      <ul class="entries" id="entries"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>7 derniers jours</h2><div class="legend"><i class="dot kcal"></i>kcal <i class="dot prot"></i>prot.</div></div>
+      <div id="weekChart" class="chart"></div>
+    </div>
+  </section>
+
+  <!-- AJOUTER -->
+  <section class="view" id="view-add">
+    <p class="hint" id="addFor"></p>
+    <div class="card">
+      <div class="card-head"><h2>Repas rapides</h2><button class="btn small ghost" id="newPresetBtn">+ Créer</button></div>
+      <div class="chips" id="portionChips" role="radiogroup" aria-label="Portion">
+        <span class="chips-label">Portion</span>
+        <button class="chip" data-m="0.5">½</button>
+        <button class="chip active" data-m="1">×1</button>
+        <button class="chip" data-m="1.5">×1,5</button>
+        <button class="chip" data-m="2">×2</button>
+      </div>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="card">
+      <h2>Photo du repas</h2>
+      <p class="hint">Prends ton assiette en photo pour ton journal. <span class="badge">Analyse automatique bientôt</span></p>
+      <label class="btn block" for="photoInput">📷 Photo</label>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+    </div>
+
+    <div class="card">
+      <h2>Rechercher un aliment</h2>
+      <form class="row" id="searchForm">
+        <input type="search" id="searchInput" placeholder="ex. skyr, pain de mie, granola…" autocomplete="off">
+        <button class="btn" type="submit">Chercher</button>
+      </form>
+      <div class="row">
+        <button class="btn ghost grow" id="scanBtn">▦ Scanner un code-barres</button>
+      </div>
+      <form class="row" id="barcodeForm">
+        <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Code-barres à la main">
+        <button class="btn ghost" type="submit">OK</button>
+      </form>
+      <div id="searchStatus" class="hint"></div>
+      <ul class="results" id="results"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Aliments de base <small class="muted">(hors ligne, pour 100 g)</small></h2>
+      <input type="search" id="baseFilter" placeholder="Filtrer…">
+      <ul class="results" id="baseList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Saisie manuelle</h2>
+      <button class="btn ghost block" id="manualBtn">✎ Entrer des macros à la main</button>
+    </div>
+  </section>
+
+  <!-- ENTRAÎNEMENT -->
+  <section class="view" id="view-train">
+    <div class="card">
+      <div class="card-head">
+        <h2 id="sessionTitle">Séance du jour</h2>
+        <div class="seg" id="sessionSeg">
+          <button data-s="A">A</button><button data-s="B">B</button>
+        </div>
+      </div>
+      <p class="hint" id="sessionHint"></p>
+      <div id="sessionExercises"></div>
+      <button class="btn block success" id="finishSession">✓ Séance terminée</button>
+    </div>
+    <div class="card">
+      <h2>Historique des séances</h2>
+      <ul class="entries" id="sessionHistory"></ul>
+    </div>
+  </section>
+
+  <!-- PROGRÈS -->
+  <section class="view" id="view-progress">
+    <div class="card">
+      <div class="card-head"><h2>Poids de corps</h2><span class="muted" id="weightSummary"></span></div>
+      <div id="weightChart" class="chart"></div>
+      <form class="row" id="weightForm">
+        <input type="number" id="weightInput" step="0.1" min="30" max="200" inputmode="decimal" placeholder="Poids (kg)">
+        <input type="date" id="weightDate">
+        <button class="btn" type="submit">Ajouter</button>
+      </form>
+      <p class="hint">Pèse-toi une fois par semaine, le matin à jeun. Vise +0,25 à +0,5 kg par semaine.</p>
+      <ul class="entries" id="weightList"></ul>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Nutrition sur 7 jours</h2><div class="legend"><i class="dot kcal"></i>kcal <i class="dot prot"></i>prot.</div></div>
+      <div id="weekChart2" class="chart"></div>
+      <div id="weekStats" class="stats"></div>
+    </div>
+  </section>
+
+  <!-- RÉGLAGES -->
+  <section class="view" id="view-settings">
+    <div class="card">
+      <h2>Objectifs du jour</h2>
+      <form id="goalsForm" class="grid2">
+        <label>Calories (kcal)<input type="number" name="kcal" inputmode="numeric"></label>
+        <label>Protéines (g)<input type="number" name="p" inputmode="numeric"></label>
+        <label>Glucides (g)<input type="number" name="g" inputmode="numeric"></label>
+        <label>Lipides (g)<input type="number" name="l" inputmode="numeric"></label>
+        <label>Poids de départ (kg)<input type="number" step="0.1" name="startW" inputmode="decimal"></label>
+        <label>Poids objectif (kg)<input type="number" step="0.1" name="goalW" inputmode="decimal"></label>
+        <button class="btn block span2" type="submit">Enregistrer</button>
+      </form>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Mes repas rapides</h2><button class="btn small ghost" id="newPresetBtn2">+ Créer</button></div>
+      <ul class="entries" id="presetAdmin"></ul>
+      <button class="btn ghost block" id="restorePresets">Restaurer les repas par défaut</button>
+    </div>
+    <div class="card">
+      <h2>Sauvegarde</h2>
+      <p class="hint">Tes données restent sur ce téléphone. Exporte-les de temps en temps.</p>
+      <div class="row">
+        <button class="btn grow" id="exportBtn">⬇ Exporter (JSON)</button>
+        <label class="btn ghost grow" for="importInput">⬆ Importer</label>
+        <input type="file" id="importInput" accept="application/json,.json" hidden>
+      </div>
+      <button class="btn danger block" id="resetBtn">Tout effacer</button>
+    </div>
+    <p class="hint center">Coach Killian · v1 · données stockées localement</p>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button class="tab active" data-view="today"><span class="ti">◉</span>Aujourd'hui</button>
+  <button class="tab" data-view="add"><span class="ti">＋</span>Ajouter</button>
+  <button class="tab" data-view="train"><span class="ti">🏋</span>Entraînement</button>
+  <button class="tab" data-view="progress"><span class="ti">📈</span>Progrès</button>
+  <button class="tab" data-view="settings"><span class="ti">⚙</span>Réglages</button>
+</nav>
+
+<div class="sheet-backdrop" id="sheetBackdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-grip"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
