@@ -196,10 +196,11 @@ const RECIPES = [
       'Ferme et laisse au frigo toute la nuit (6 h minimum), puis mélange le matin.'],
     keep: '2 jours maximum au frigo, bocal fermé.', oats: true }
 ];
-const RECIPE_CATS = { plat: 'Plats', 'petit-dej': 'Petit-déj', shaker: 'Shakers' };
+const RECIPE_CATS = { plat: 'Plats', 'petit-dej': 'Petit-déj', shaker: 'Shakers', mine: 'Mes recettes' };
 const RECIPE_PORTIONS = [1, 3, 4, 7];
 const SANS_AVOINE = 'Version sans avoine : remplace les 60 g de flocons par 2 tranches de pain complet émiettées ou 60 g de semoule fine. Ça fait un pudding de nuit avec la même texture.';
-const recipeById = id => RECIPES.find(r => r.id === id);
+const recipeById = id => RECIPES.find(r => r.id === id) || (S.myRecipes || []).find(r => r.id === id);
+const allRecipes = () => RECIPES.concat(S.myRecipes || []);
 
 /* ---------- État & stockage ---------- */
 function freshState() {
@@ -213,7 +214,8 @@ function freshState() {
     workouts: [],     // [{ id, date, type, ex:[{name, sets:[{w,r}]}] }]
     weights: [],      // [{ date, kg }]
     draft: null,
-    ai: {}            // { model, usage:{month, n, usd} } – la clé API est stockée à part
+    ai: {},           // { model, usage:{month, n, usd} } – la clé API est stockée à part
+    myRecipes: []     // recettes enregistrées depuis le Frigo
   };
 }
 let S = load();
@@ -351,6 +353,7 @@ function renderWeekChart(sel, endKey) {
 /* ---------- Rendu : Recettes ---------- */
 let recipeCat = 'all';
 function recipeMacros(r) {
+  if (r.mine) return { e: r.e, name: r.name, kcal: r.kcal, p: r.p, g: r.g, l: r.l };
   const p = S.presets.find(x => x.id === r.id) || DEFAULT_PRESETS.find(x => x.id === r.id);
   return p ? { e: p.e, name: r.name || p.name, kcal: p.kcal, p: p.p, g: p.g, l: p.l } : { e: '🍽️', name: r.name || r.id, kcal: 0, p: 0, g: 0, l: 0 };
 }
@@ -379,15 +382,15 @@ function ingName(name, q, u, m) {
 function renderRecipes() {
   const q = norm($('#recipeFilter').value.trim());
   $$('#recipeCats .chip').forEach(c => c.classList.toggle('active', c.dataset.rc === recipeCat));
-  const list = RECIPES.filter(r => (recipeCat === 'all' || r.cat === recipeCat) &&
+  const list = allRecipes().filter(r => (recipeCat === 'all' || r.cat === recipeCat) &&
     (!q || norm(recipeMacros(r).name + ' ' + r.ing.map(i => i[2]).join(' ')).includes(q)));
   $('#recipeList').innerHTML = list.length ? list.map(r => {
     const m = recipeMacros(r);
     return `<li data-recipe="${r.id}"><span class="r-emoji">${esc(m.e || '🍽️')}</span>
       <div class="e-main"><div class="e-name">${esc(m.name)}</div>
-      <div class="e-sub">${esc(RECIPE_CATS[r.cat])} · ⏱ ${esc(r.time)} · ${r0(m.p)} g prot.</div></div>
+      <div class="e-sub">${r.mine ? '🧊 Frigo · ' + esc((MEAL_TYPES[r.type] || MEAL_TYPES.repas).label) : esc(RECIPE_CATS[r.cat])} · ⏱ ${esc(r.time)} · ${r0(m.p)} g prot.</div></div>
       <div class="e-kcal">${fmt(m.kcal)} kcal</div></li>`;
-  }).join('') : '<li class="empty">Aucune recette trouvée.</li>';
+  }).join('') : `<li class="empty">${recipeCat === 'mine' ? 'Pas encore de recette perso : utilise 🧊 Frigo puis « Enregistrer dans mes recettes ».' : 'Aucune recette trouvée.'}</li>`;
 }
 function openRecipe(id, mult = 1) {
   const r = recipeById(id); if (!r) return;
@@ -408,10 +411,16 @@ function openRecipe(id, mult = 1) {
     <ol class="steps">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     ${r.note ? `<p class="r-note">💡 ${esc(r.note)}</p>` : ''}
     ${r.oats ? `<p class="r-note">🔄 ${esc(SANS_AVOINE)}</p>` : ''}
-    <p class="r-keep">🧊 <b>Conservation :</b> ${esc(r.keep)}</p>
+    ${r.keep ? `<p class="r-keep">🧊 <b>Conservation :</b> ${esc(r.keep)}</p>` : ''}
+    ${r.mine ? `<p class="hint">🧊 Créée avec le Frigo le ${esc(parseKey(r.created || todayKey()).toLocaleDateString('fr-FR'))}.</p>` : ''}
     <button class="btn block" id="rAdd">＋ Ajouter ${isToday ? 'à aujourd\u2019hui' : 'au ' + esc(parseKey(curDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} (1 ${esc(unit === 'portion' || unit === 'bocal' ? unit : 'recette')})</button>
     <button class="btn ghost block mt8" id="rShop">🛒 Ajouter les ingrédients à la liste (${mult} ${esc(unitN(mult))})</button>
+    ${r.mine ? '<button class="btn ghost block mt8 danger-text" id="rDelMine">🗑 Supprimer de mes recettes</button>' : ''}
     <button class="btn ghost block r-close" data-close>Fermer</button>`);
+  if (r.mine) $('#rDelMine').onclick = () => {
+    if (!confirm(`Supprimer « ${r.name} » de tes recettes ?`)) return;
+    S.myRecipes = S.myRecipes.filter(x => x.id !== r.id); save(); closeSheet(); renderRecipes(); toast('Recette supprimée');
+  };
   $('#rPortions').onclick = e => { const b = e.target.closest('[data-rp]'); if (b) { const top = $('.sheet').scrollTop; openRecipe(id, +b.dataset.rp); $('.sheet').scrollTop = top; } };
   $('#rShop').onclick = () => {
     const n = addRecipeToShop(r, mult), b = $('#rShop');
@@ -598,15 +607,16 @@ function addRecipeToShop(r, mult) {
 
 let recipeMode = 'recipes';
 function setRecipeMode(mode) {
-  recipeMode = mode === 'courses' ? 'courses' : 'recipes';
+  recipeMode = ['courses', 'frigo'].includes(mode) ? mode : 'recipes';
   $$('#recipeSeg button').forEach(b => b.classList.toggle('active', b.dataset.rm === recipeMode));
   $('#recipesPane').hidden = recipeMode !== 'recipes';
   $('#coursesPane').hidden = recipeMode !== 'courses';
+  $('#frigoPane').hidden = recipeMode !== 'frigo';
   if ($('#view-recipes').classList.contains('active')) {
     $('#datenav').style.visibility = recipeMode === 'courses' ? 'hidden' : 'visible';
-    history.replaceState(null, '', '#' + (recipeMode === 'courses' ? 'courses' : 'recipes'));
+    history.replaceState(null, '', '#' + (recipeMode === 'recipes' ? 'recipes' : recipeMode));
   }
-  if (recipeMode === 'courses') renderShop(); else renderRecipes();
+  if (recipeMode === 'courses') renderShop(); else if (recipeMode === 'frigo') renderFrigo(); else renderRecipes();
 }
 function catOptions(sel) {
   return C.cats.map(c => `<option value="${esc(c.id)}"${c.id === sel ? ' selected' : ''}>${esc(c.e)} ${esc(c.name)}</option>`).join('') +
@@ -1336,6 +1346,259 @@ function openPresetEditor(id) {
   };
 }
 
+/* ---------- 🧊 Frigo → recettes (Claude) ----------
+ * Étape 1 : photos (1 à 3) + « j'ai aussi » → liste d'ingrédients modifiable.
+ * Étape 2 : 2-3 recettes prise de masse avec UNIQUEMENT ces ingrédients + les basiques.
+ * Même clé, même modèle, même appel (callClaude), même parsing (extractJSON) que l'analyse photo. */
+const FRIGO_KEY = 'coachKillian.frigo'; // session en cours (sans les photos), hors export
+const FRIGO_MAX_PHOTOS = 3;
+const MEAL_TYPES = {
+  repas: { label: 'Repas', e: '🍽️', prompt: 'repas principal (déjeuner ou dîner)', kcal: [700, 900], p: [35, 40] },
+  'petit-dej': { label: 'Petit-déj', e: '🥞', prompt: 'petit-déjeuner', kcal: [550, 750], p: [25, 30] },
+  collation: { label: 'Collation / shaker', e: '🥤', prompt: 'collation ou shaker (à boire ou à manger vite entre deux repas)', kcal: [500, 650], p: [25, 30] }
+};
+const FRIGO_DISLIKES = [
+  'jamais de fruits secs, pruneaux, pois chiches, haricots blancs, raviolis en boîte ni flocons d\u2019avoine, SAUF si l\u2019un d\u2019eux figure explicitement dans la liste de ses ingrédients',
+  'les œufs uniquement en omelette ou à la coque (jamais durs, au plat ni pochés avec le jaune visible)',
+  'la patate douce seulement si elle est cachée dans une sauce ou un curry (mixée ou écrasée), jamais en morceaux visibles'
+];
+const FRIGO_BASICS = 'sel, poivre, huile (olive ou tournesol), épices courantes (paprika, curry, cumin, herbes de Provence, ail en poudre, piment), eau';
+let FR = frigoLoad(), frPhotos = [], frRun = 0;
+function frigoLoad() {
+  try { const d = JSON.parse(localStorage.getItem(FRIGO_KEY) || 'null'); if (d && typeof d === 'object') return { type: MEAL_TYPES[d.type] ? d.type : 'repas', extra: String(d.extra || ''), ings: Array.isArray(d.ings) ? d.ings : null, remark: String(d.remark || ''), res: d.res || null, saved: d.saved || {} }; } catch { }
+  return { type: 'repas', extra: '', ings: null, remark: '', res: null, saved: {} };
+}
+function frigoSave() { try { localStorage.setItem(FRIGO_KEY, JSON.stringify(FR)); } catch { } }
+function remainingToday() {
+  const t = totals(curDate), G = S.goals;
+  return { kcal: Math.max(0, G.kcal - t.kcal), p: Math.max(0, G.p - t.p), g: Math.max(0, G.g - t.g), l: Math.max(0, G.l - t.l), eaten: t };
+}
+function frigoDetectPrompt(extra, nPhotos) {
+  return `Tu es un assistant de cuisine français. ${nPhotos ? `Les ${nPhotos > 1 ? nPhotos + ' photos montrent' : 'photo montre'} ce que l'utilisateur a chez lui (frigo, placard, produits).` : 'L\u2019utilisateur n\u2019a pas envoyé de photo.'}
+1. Liste chaque aliment ou produit alimentaire que tu identifies avec une certitude raisonnable (lis les étiquettes et emballages quand ils sont lisibles).
+2. Estime la quantité disponible (ex. « 500 g », « 6 œufs », « 1 L », « 1 boîte de 400 g », « ½ paquet »).
+3. Ignore ce qui n'est pas de la nourriture et ne devine pas ce qui est caché. Regroupe les doublons.
+${extra ? `L'utilisateur précise qu'il a aussi : « ${extra} ». Ajoute ces éléments à la liste (avec la quantité qu'il donne).\n` : ''}
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni bloc de code, au format exact :
+{"ingredients":[{"nom":"","quantite":""}],"remarque":""}
+"nom" : en français, court (ex. « Blanc de poulet », « Riz basmati », « Yaourt grec »). "remarque" : une phrase courte sur ce qui était difficile à voir, ou "".`;
+}
+function frigoRecipePrompt(ings, type, rest) {
+  const M = MEAL_TYPES[type] || MEAL_TYPES.repas, G = S.goals;
+  return `Tu es un coach nutrition français spécialisé en prise de masse. L'utilisateur, Killian, est un ectomorphe de ${S.profile.startW} kg qui vise ${S.profile.goalW} kg (objectif : ${G.kcal} kcal et ${G.p} g de protéines par jour). Il cuisine simplement.
+
+Ingrédients disponibles chez lui (quantités approximatives) :
+${ings.map(i => `- ${i.nom}${i.qte ? ' : ' + i.qte : ''}`).join('\n')}
+
+Ingrédients de base toujours disponibles : ${FRIGO_BASICS}.
+
+Type de repas : ${M.prompt}.
+Il lui reste pour la journée : ${r0(rest.kcal)} kcal, ${r0(rest.p)} g de protéines, ${r0(rest.g)} g de glucides, ${r0(rest.l)} g de lipides (objectif du jour moins ce qu'il a déjà mangé).
+
+Propose 2 ou 3 recettes différentes, en français :
+- avec UNIQUEMENT les ingrédients disponibles ci-dessus et les ingrédients de base, sans dépasser les quantités disponibles ;
+- pour 1 portion : environ ${M.kcal[0]} à ${M.kcal[1]} kcal et au moins ${M.p[0]} à ${M.p[1]} g de protéines. Si ce qui lui reste aujourd'hui est nettement plus bas, vise plutôt ce reste, sans descendre sous ${M.p[0]} g de protéines si possible ;
+- quantités en grammes CRUS pour 1 portion ; kcal et macros calculés avec des valeurs type table CIQUAL ;
+- étapes numérotées courtes et simples, temps total réaliste.
+
+Ses goûts, à respecter strictement :
+${FRIGO_DISLIKES.map(d => '- ' + d).join(' ;\n')}.
+
+Si les ingrédients ne permettent pas d'atteindre les protéines visées, dis-le dans "alerte_proteines" et donne dans "ajout_conseille" l'ajout le plus simple à acheter (ex. « 1 boîte de thon », « 200 g de fromage blanc »). "manquants" : pour chaque recette, les articles à acheter qui l'amélioreraient (vide si rien ne manque) ; la recette elle-même n'utilise que ce qui est disponible.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni bloc de code, au format exact :
+{"recettes":[{"nom":"","emoji":"🍳","temps":"20 min","ingredients":[{"nom":"","grammes":0,"texte":""}],"etapes":[""],"kcal":0,"proteines":0,"glucides":0,"lipides":0,"manquants":[{"nom":"","quantite":""}],"conseil":""}],"alerte_proteines":"","ajout_conseille":""}
+Les nombres sont des nombres JSON (pas de texte, pas d'unité). "grammes" = poids pour 1 portion ; mets 0 si ça ne se pèse pas (épices, sel) et indique alors la quantité dans "texte" (ex. « 1 pincée »). "texte" peut aussi préciser (ex. « 3 œufs »). "conseil" : une phrase courte (conservation, variante) ou "".`;
+}
+/* Appel générique : mêmes en-têtes, même gestion d'erreurs et de relance que l'analyse photo */
+async function aiAskJSON(content, maxTokens = 3000) {
+  const key = getApiKey();
+  if (!key) throw new AIError('nokey', 'Ajoute d\u2019abord ta clé Claude dans Réglages → Analyse photo (IA).');
+  const model = aiModel().id;
+  const body = effort => { const b = { model, max_tokens: maxTokens, messages: [{ role: 'user', content }] }; if (effort) b.output_config = { effort: 'low' }; return b; };
+  let data;
+  try { data = await callClaude(body(true), key); }
+  catch (e) {
+    if (e.kind === 'request' && e.status === 400 && /effort|output_config/i.test(e.apiMsg || '')) data = await callClaude(body(false), key);
+    else if (e.kind === 'busy' && /surchargé/.test(e.message)) { await new Promise(r => setTimeout(r, 1500)); data = await callClaude(body(true), key); }
+    else throw e;
+  }
+  countAnalysis(data?.usage, model);
+  const text = (data?.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  if (!text && data?.stop_reason === 'refusal') throw new AIError('parse', 'Claude a refusé de répondre à cette demande.');
+  if (data?.stop_reason === 'max_tokens' && !/\}\s*$/.test(text.replace(/```\s*$/, '').trim())) throw new AIError('parse', 'Réponse de Claude coupée (trop longue). Réessaie.', true);
+  return extractJSON(text);
+}
+function normalizeIngredients(j) {
+  const seen = new Set();
+  const ings = (Array.isArray(j?.ingredients) ? j.ingredients : []).map(i => ({ nom: String(i?.nom || i?.name || '').trim().slice(0, 60), qte: String(i?.quantite ?? i?.qte ?? i?.quantity ?? '').trim().slice(0, 40) }))
+    .filter(i => i.nom && !seen.has(shopNorm(i.nom)) && seen.add(shopNorm(i.nom)));
+  return { ings, remark: String(j?.remarque || '').slice(0, 300) };
+}
+function normalizeRecipes(j) {
+  const recs = (Array.isArray(j?.recettes) ? j.recettes : []).slice(0, 3).map(r => {
+    const x = { nom: String(r?.nom || 'Recette').slice(0, 80), e: String(r?.emoji || '🍽️').slice(0, 4), temps: String(r?.temps || '').slice(0, 20),
+      ing: (Array.isArray(r?.ingredients) ? r.ingredients : []).map(i => ({ nom: String(i?.nom || '').slice(0, 60), grammes: r0(num(i?.grammes)), texte: String(i?.texte || '').slice(0, 40) })).filter(i => i.nom),
+      etapes: (Array.isArray(r?.etapes) ? r.etapes : []).map(s => String(s).replace(/^\s*\d+[.)]\s*/, '').slice(0, 400)).filter(Boolean),
+      kcal: num(r?.kcal), p: num(r?.proteines ?? r?.['protéines']), g: num(r?.glucides), l: num(r?.lipides),
+      manquants: (Array.isArray(r?.manquants) ? r.manquants : []).map(m => (typeof m === 'string' ? { nom: m, quantite: '' } : { nom: String(m?.nom || ''), quantite: String(m?.quantite || '') })).filter(m => m.nom.trim()),
+      conseil: String(r?.conseil || '').slice(0, 300) };
+    if (!x.kcal) x.kcal = kcalOf(x.p, x.g, x.l);
+    x.kcal = r0(x.kcal); x.p = r1(x.p); x.g = r1(x.g); x.l = r1(x.l);
+    return x;
+  }).filter(r => r.ing.length && r.etapes.length);
+  if (!recs.length) throw new AIError('parse', 'Claude n\u2019a pas proposé de recette exploitable. Réessaie ou ajoute des ingrédients.', true);
+  return { recs, alerte: String(j?.alerte_proteines || '').slice(0, 300), ajout: String(j?.ajout_conseille || '').slice(0, 120) };
+}
+
+function renderFrigo() {
+  const key = !!getApiKey();
+  $('#frNoKey').hidden = key;
+  $('#frPhotos').innerHTML = frPhotos.map((p, i) => `<div class="fr-ph"><img src="${p.thumb}" alt="Photo ${i + 1}"><button class="fr-del" data-frdel="${i}" aria-label="Retirer la photo">✕</button></div>`).join('');
+  $('#frAddPhoto').textContent = frPhotos.length ? `📷 Ajouter une photo (${frPhotos.length}/${FRIGO_MAX_PHOTOS})` : '📷 Prendre / choisir des photos (1 à 3)';
+  $('#frAddPhoto').classList.toggle('disabled', frPhotos.length >= FRIGO_MAX_PHOTOS);
+  if ($('#frExtra').value !== FR.extra && document.activeElement !== $('#frExtra')) $('#frExtra').value = FR.extra;
+  $$('#frType [data-ft]').forEach(b => b.classList.toggle('active', b.dataset.ft === FR.type));
+  $('#frDetect').disabled = !key || (!frPhotos.length && !FR.extra.trim());
+  // étape 1
+  $('#frIngCard').hidden = !FR.ings;
+  if (FR.ings) {
+    $('#frIngCount').textContent = `${FR.ings.length} ingrédient${FR.ings.length > 1 ? 's' : ''}`;
+    $('#frRemark').textContent = FR.remark; $('#frRemark').hidden = !FR.remark;
+    $('#frIngList').innerHTML = FR.ings.length ? FR.ings.map((i, k) => `<li data-fri="${k}">
+      <input class="fr-nom" data-f="nom" value="${esc(i.nom)}" aria-label="Ingrédient">
+      <input class="fr-qte" data-f="qte" value="${esc(i.qte)}" placeholder="qté" aria-label="Quantité">
+      <button class="del" data-frrm="${k}" aria-label="Retirer ${esc(i.nom)}">✕</button></li>`).join('') : '<li class="empty">Aucun ingrédient : ajoutes-en ci-dessous.</li>';
+    $('#frRecipes').disabled = !key || !FR.ings.length;
+    $('#frRecipes').textContent = `② Proposer des recettes · ${MEAL_TYPES[FR.type].label.toLowerCase()}`;
+  }
+  renderFrigoResults();
+}
+function renderFrigoResults() {
+  const R = FR.res, box = $('#frResults');
+  if (!R) { box.innerHTML = ''; return; }
+  const M = MEAL_TYPES[R.type] || MEAL_TYPES.repas, isToday = curDate === todayKey();
+  box.innerHTML = `${R.alerte ? `<div class="fr-alert" role="alert">⚠️ ${esc(R.alerte)}${R.ajout ? `<br><b>Le plus simple :</b> ${esc(R.ajout)}` : ''}</div>` : ''}` +
+    R.recs.map((r, k) => {
+      const lowP = r.p < M.p[0], saved = FR.saved?.[r.nom];
+      return `<div class="card fr-rec" data-frrec="${k}">
+      <h2>${esc(r.e)} ${esc(r.nom)}</h2>
+      <p class="hint" style="margin:0 0 6px">${r.temps ? '⏱ ' + esc(r.temps) + ' · ' : ''}1 portion · ${esc(M.label)}</p>
+      <div class="macro-line"><span class="pill"><b>${fmt(r.kcal)}</b> kcal</span><span class="pill">P ${r0(r.p)} g</span><span class="pill">G ${r0(r.g)} g</span><span class="pill">L ${r0(r.l)} g</span></div>
+      ${lowP ? `<div class="fr-warn">⚠️ Seulement ${r0(r.p)} g de protéines (objectif ≥ ${M.p[0]} g)${R.ajout ? ` : ajoute ${esc(R.ajout)}.` : '.'}</div>` : ''}
+      <h4>Ingrédients</h4>
+      <ul class="ing">${r.ing.map(i => `<li><span class="q">${i.grammes ? `${i.grammes} g` : esc(i.texte || 'au goût')}</span><span class="n">${esc(i.nom)}${i.grammes && i.texte ? `<small>${esc(i.texte)}</small>` : ''}</span></li>`).join('')}</ul>
+      <h4>Étapes</h4>
+      <ol class="steps">${r.etapes.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+      ${r.conseil ? `<p class="r-note">💡 ${esc(r.conseil)}</p>` : ''}
+      ${r.manquants.length ? `<p class="r-keep">🛒 <b>Pour l\u2019améliorer :</b> ${r.manquants.map(m => esc(m.nom + (m.quantite ? ` (${m.quantite})` : ''))).join(', ')}</p>
+        <button class="btn ghost block" data-frmiss="${k}">🛒 Ajouter les manquants à la liste de courses</button>` : ''}
+      <button class="btn block mt8" data-fradd="${k}">＋ Ajouter ${isToday ? 'à aujourd\u2019hui' : 'au ' + esc(parseKey(curDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))}</button>
+      <button class="btn ghost block mt8" data-frsave="${k}" ${saved ? 'disabled' : ''}>${saved ? '✓ Enregistrée dans mes recettes' : '💾 Enregistrer dans mes recettes'}</button>
+    </div>`;
+    }).join('') + `<button class="btn ghost block" id="frAgain">↻ Autres idées</button>`;
+}
+function frStatus(html) { $('#frStatus').innerHTML = html; }
+function frLoading(msg, run) {
+  frStatus(`<div class="card"><div class="ai-loading"><span class="spinner" aria-hidden="true"></span><span>${esc(msg)}</span></div>
+    <button class="btn ghost block" id="frCancel">Annuler</button></div>`);
+  $('#frCancel').onclick = () => { if (frRun === run) frRun++; frStatus(''); setFrBusy(false); };
+}
+function setFrBusy(b) { ['#frDetect', '#frRecipes'].forEach(s => { const el = $(s); if (el) el.dataset.busy = b ? '1' : ''; }); if (!b) renderFrigo(); else { $('#frDetect').disabled = true; if ($('#frRecipes')) $('#frRecipes').disabled = true; } }
+function frError(e, retry) {
+  const err = e instanceof AIError ? e : new AIError('other', 'Erreur inattendue : ' + (e?.message || e), true);
+  const toSettings = ['auth', 'model', 'nokey'].includes(err.kind), toConsole = ['credit', 'auth'].includes(err.kind);
+  frStatus(`<div class="card"><div class="ai-error" role="alert" style="margin-top:0">${esc(err.message)}</div>
+    ${toConsole ? '<p class="hint"><a href="https://console.anthropic.com/" target="_blank" rel="noopener">Ouvrir console.anthropic.com ↗</a></p>' : ''}
+    ${err.retry ? '<button class="btn block" id="frRetry">↻ Réessayer</button>' : ''}
+    ${toSettings ? '<button class="btn ghost block mt8" id="frGoSettings">⚙ Ouvrir Réglages → Analyse photo</button>' : ''}</div>`);
+  if (err.retry) $('#frRetry').onclick = retry;
+  if (toSettings) $('#frGoSettings').onclick = goAISettings;
+}
+async function frigoDetect() {
+  if (!getApiKey()) return renderFrigo();
+  const run = ++frRun; setFrBusy(true);
+  frLoading(`Claude regarde ${frPhotos.length > 1 ? 'tes photos' : frPhotos.length ? 'ta photo' : 'ta liste'} (5 à 20 s)…`, run);
+  try {
+    const content = frPhotos.map(p => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: p.big.split(',')[1] || '' } }));
+    content.push({ type: 'text', text: frigoDetectPrompt(FR.extra.trim(), frPhotos.length) });
+    const res = normalizeIngredients(await aiAskJSON(content, 2000));
+    if (run !== frRun) return;
+    FR.ings = res.ings; FR.remark = res.remark || (res.ings.length ? '' : 'Rien de reconnu : ajoute tes ingrédients à la main ou reprends une photo plus nette.');
+    FR.res = null; frigoSave(); frStatus(''); setFrBusy(false);
+    $('#frIngCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { if (run !== frRun) return; console.warn('frigo', e); setFrBusy(false); frError(e, frigoDetect); }
+}
+async function frigoRecipes() {
+  frigoReadIngs();
+  const ings = (FR.ings || []).filter(i => i.nom.trim());
+  if (!ings.length) return toast('Ajoute au moins un ingrédient');
+  const run = ++frRun; setFrBusy(true);
+  frLoading('Claude prépare 2-3 recettes avec ce que tu as (10 à 30 s)…', run);
+  try {
+    const type = FR.type, rest = remainingToday();
+    const res = normalizeRecipes(await aiAskJSON([{ type: 'text', text: frigoRecipePrompt(ings, type, rest) }], 4000));
+    if (run !== frRun) return;
+    FR.res = { ...res, type, at: Date.now() }; FR.saved = {}; frigoSave(); frStatus(''); setFrBusy(false);
+    $('#frResults').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { if (run !== frRun) return; console.warn('frigo', e); setFrBusy(false); frError(e, frigoRecipes); }
+}
+function frigoReadIngs() {
+  if (!FR.ings) return;
+  $$('#frIngList li[data-fri]').forEach(li => { const k = +li.dataset.fri; if (FR.ings[k]) { FR.ings[k].nom = li.querySelector('[data-f=nom]').value.trim(); FR.ings[k].qte = li.querySelector('[data-f=qte]').value.trim(); } });
+  FR.ings = FR.ings.filter(i => i.nom); frigoSave();
+}
+async function frigoAddPhotos(files) {
+  const list = [...files].slice(0, FRIGO_MAX_PHOTOS - frPhotos.length);
+  if (files.length > list.length) toast(`${FRIGO_MAX_PHOTOS} photos maximum`);
+  for (const f of list) {
+    try { const thumb = await resizeImage(f); let big; try { big = await resizeImage(f, 1024, 0.8); } catch { big = thumb; } frPhotos.push({ thumb, big }); }
+    catch { toast('Image illisible'); }
+  }
+  renderFrigo();
+}
+function myRecipeFrom(r, type) {
+  return { id: 'm-' + uid(), mine: true, cat: 'mine', type, name: r.nom, e: r.e, time: r.temps || '—', kcal: r.kcal, p: r.p, g: r.g, l: r.l,
+    ing: r.ing.map(i => (i.grammes ? [i.grammes, 'g', i.nom, i.texte || undefined] : [null, i.texte || 'au goût', i.nom])),
+    steps: r.etapes, note: r.conseil || '', missing: r.manquants, created: todayKey() };
+}
+function bindFrigo() {
+  $('#frInput').onchange = e => { if (e.target.files.length) frigoAddPhotos(e.target.files); e.target.value = ''; };
+  $('#frAddPhoto').addEventListener('click', e => { if (frPhotos.length >= FRIGO_MAX_PHOTOS) { e.preventDefault(); toast(`${FRIGO_MAX_PHOTOS} photos maximum : retires-en une`); } });
+  $('#frPhotos').addEventListener('click', e => { const b = e.target.closest('[data-frdel]'); if (b) { frPhotos.splice(+b.dataset.frdel, 1); renderFrigo(); } });
+  $('#frExtra').addEventListener('input', e => { FR.extra = e.target.value; frigoSave(); $('#frDetect').disabled = !getApiKey() || (!frPhotos.length && !FR.extra.trim()); });
+  $('#frType').addEventListener('click', e => { const b = e.target.closest('[data-ft]'); if (b) { FR.type = b.dataset.ft; frigoSave(); renderFrigo(); } });
+  $('#frGoKey').onclick = goAISettings;
+  $('#frDetect').onclick = frigoDetect;
+  $('#frRecipes').onclick = frigoRecipes;
+  $('#frIngList').addEventListener('change', frigoReadIngs);
+  $('#frIngList').addEventListener('click', e => { const b = e.target.closest('[data-frrm]'); if (b) { frigoReadIngs(); FR.ings.splice(+b.dataset.frrm, 1); frigoSave(); renderFrigo(); } });
+  $('#frIngAdd').onsubmit = e => {
+    e.preventDefault(); frigoReadIngs();
+    const nom = $('#frIngName').value.trim(); if (!nom) return;
+    (FR.ings ||= []).push({ nom, qte: $('#frIngQty').value.trim() }); $('#frIngName').value = ''; $('#frIngQty').value = '';
+    frigoSave(); renderFrigo(); $('#frIngName').focus();
+  };
+  $('#frReset').onclick = () => { if (!confirm('Tout recommencer (photos, ingrédients et recettes) ?')) return; frRun++; frPhotos = []; FR = { type: FR.type, extra: '', ings: null, remark: '', res: null, saved: {} }; frigoSave(); frStatus(''); renderFrigo(); window.scrollTo(0, 0); };
+  $('#frResults').addEventListener('click', e => {
+    if (e.target.closest('#frAgain')) return frigoRecipes();
+    const R = FR.res; if (!R) return;
+    const add = e.target.closest('[data-fradd]'), sv = e.target.closest('[data-frsave]'), ms = e.target.closest('[data-frmiss]');
+    if (add) { const r = R.recs[+add.dataset.fradd]; addEntry({ name: r.nom, kcal: r.kcal, p: r.p, g: r.g, l: r.l }, '1 portion · 🧊 Frigo'); }
+    if (sv) {
+      const r = R.recs[+sv.dataset.frsave];
+      (S.myRecipes ||= []).push(myRecipeFrom(r, R.type)); save(); renderRecipes();
+      (FR.saved ||= {})[r.nom] = true; frigoSave(); renderFrigoResults(); toast('💾 Enregistrée dans Recettes → Mes recettes');
+    }
+    if (ms) {
+      const r = R.recs[+ms.dataset.frmiss]; let n = 0;
+      for (const m of r.manquants) { const it = shopUpsert(m.nom.trim(), null, null); if (m.quantite && !it.qty) it.qty = m.quantite; n++; }
+      shopSave(); renderShop(); ms.disabled = true; ms.textContent = `✓ ${n} article${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''} à la liste`;
+      toast(`🛒 ${n} article${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''} à ta liste de courses`);
+    }
+  });
+}
+
 /* ---------- Bibliothèque d'exercices ----------
  * Photos (début / fin du mouvement) et muscles : free-exercise-db (yuhonas, Unlicense / domaine public),
  * https://github.com/yuhonas/free-exercise-db – images copiées dans exercises/<id>/0.jpg et 1.jpg.
@@ -1592,16 +1855,16 @@ function closeSheet() {
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
-  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train' || (view === 'recipes' && recipeMode === 'recipes')) ? 'visible' : 'hidden';
+  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train' || (view === 'recipes' && recipeMode !== 'courses')) ? 'visible' : 'hidden';
   if (view === 'train') renderTrain();
   if (view === 'progress') renderProgress();
   if (view === 'settings') renderSettings();
   if (view === 'add') renderPresets();
-  if (view === 'recipes') { if (recipeMode === 'courses') renderShop(); else renderRecipes(); }
+  if (view === 'recipes') { if (recipeMode === 'courses') renderShop(); else if (recipeMode === 'frigo') renderFrigo(); else renderRecipes(); }
   window.scrollTo(0, 0);
-  history.replaceState(null, '', '#' + (view === 'recipes' && recipeMode === 'courses' ? 'courses' : view));
+  history.replaceState(null, '', '#' + (view === 'recipes' && recipeMode !== 'recipes' ? recipeMode : view));
 }
-function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderShop(); renderTrain(); renderExLib(); renderProgress(); renderSettings(); }
+function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderShop(); renderFrigo(); renderTrain(); renderExLib(); renderProgress(); renderSettings(); }
 
 /* ---------- Événements ---------- */
 function bind() {
@@ -1667,6 +1930,7 @@ function bind() {
   $('#photoGoAI').onclick = e => { e.preventDefault(); goAISettings(); };
   bindAISettings();
   bindShop();
+  bindFrigo();
 
   $('#sessionSeg').addEventListener('click', e => {
     const b = e.target.closest('[data-s]'); if (!b || b.dataset.s === S.draft.type) return;
@@ -1729,8 +1993,8 @@ function bind() {
 /* ---------- Démarrage ---------- */
 bind();
 renderAll();
-{ const h = (location.hash || '').slice(1); if (h === 'courses') { recipeMode = 'courses'; setRecipeMode('courses'); } show(h === 'courses' ? 'recipes' : ['today', 'add', 'recipes', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
+{ const h = (location.hash || '').slice(1); if (h === 'courses' || h === 'frigo') { recipeMode = h; setRecipeMode(h); } show(h === 'courses' || h === 'frigo' ? 'recipes' : ['today', 'add', 'recipes', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, get frigo() { return FR; }, frigoDetectPrompt, frigoRecipePrompt, normalizeRecipes, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests

@@ -112,6 +112,7 @@
     <div class="seg seg-wide" id="recipeSeg" role="tablist">
       <button class="active" data-rm="recipes" role="tab">📖 Recettes</button>
       <button data-rm="courses" role="tab">🛒 Courses <span class="shop-badge" id="shopBadge"></span></button>
+      <button data-rm="frigo" role="tab">🧊 Frigo</button>
     </div>
     <div id="recipesPane">
     <div class="card">
@@ -123,6 +124,7 @@
         <button class="chip" data-rc="plat">Plats</button>
         <button class="chip" data-rc="petit-dej">Petit-déj</button>
         <button class="chip" data-rc="shaker">Shakers</button>
+        <button class="chip" data-rc="mine">Mes recettes</button>
       </div>
       <ul class="results" id="recipeList"></ul>
     </div>
@@ -147,6 +149,37 @@
       </div>
       <div id="shopList"></div>
       <button class="btn ghost block" id="shopRestore">Restaurer la liste par défaut</button>
+    </div>
+    <div id="frigoPane" hidden>
+      <div class="card">
+        <h2>🧊 Qu'est-ce que je cuisine ?</h2>
+        <p class="hint">Prends en photo ton frigo, ton placard ou tes produits. Claude liste ce que tu as, tu corriges, puis il te propose 2 ou 3 recettes prise de masse avec.</p>
+        <div class="ai-error" id="frNoKey" hidden>Le Frigo utilise Claude : ajoute d'abord ta clé dans Réglages → Analyse photo (IA).
+          <button class="btn ghost block mt8" id="frGoKey" type="button">⚙ Ajouter ma clé Claude</button></div>
+        <div class="fr-photos" id="frPhotos"></div>
+        <label class="btn ghost block" for="frInput" id="frAddPhoto">📷 Prendre / choisir des photos (1 à 3)</label>
+        <input type="file" id="frInput" accept="image/*" multiple hidden>
+        <label class="mt12">J'ai aussi… (optionnel)<textarea id="frExtra" rows="2" placeholder="ex. 1 kg de riz, 2 boîtes de thon, du fromage blanc"></textarea></label>
+        <div class="chips mt8" id="frType" role="radiogroup" aria-label="Type de repas">
+          <button class="chip" data-ft="repas">🍽️ Repas</button><button class="chip" data-ft="petit-dej">🥞 Petit-déj</button><button class="chip" data-ft="collation">🥤 Collation / shaker</button>
+        </div>
+        <button class="btn block" id="frDetect">① Détecter mes ingrédients</button>
+      </div>
+      <div id="frStatus"></div>
+      <div class="card" id="frIngCard" hidden>
+        <div class="card-head"><h2>Mes ingrédients</h2><span class="muted shop-sum" id="frIngCount"></span></div>
+        <p class="hint" id="frRemark"></p>
+        <p class="hint" style="margin-top:0">Corrige les noms et les quantités, retire ce qui est faux (✕) et ajoute ce qui manque.</p>
+        <ul class="fr-ings" id="frIngList"></ul>
+        <form class="row mt8" id="frIngAdd" autocomplete="off">
+          <input id="frIngName" placeholder="Ajouter un ingrédient">
+          <input id="frIngQty" class="fr-qte" placeholder="qté">
+          <button class="btn ghost" type="submit" aria-label="Ajouter">＋</button>
+        </form>
+        <button class="btn block" id="frRecipes">② Proposer des recettes</button>
+        <button class="btn ghost block mt8 small" id="frReset">Recommencer</button>
+      </div>
+      <div id="frResults"></div>
     </div>
   </section>
 
@@ -253,7 +286,7 @@
       Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
       Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
     </div>
-    <p class="hint center">Coach Killian · v7 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v8 · données stockées localement</p>
   </section>
 </main>
 
