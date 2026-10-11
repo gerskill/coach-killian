@@ -833,32 +833,86 @@ async function lookupBarcode(code) {
   } catch (e) { st.textContent = 'Recherche impossible (réseau ?).'; }
 }
 
-/* ---------- Scanner code-barres ---------- */
-let scanStream = null, scanTimer = null;
+/* ---------- Scanner code-barres ----------
+ * Android/Chrome : BarcodeDetector natif. iPhone/Safari (et Firefox) : polyfill barcode-detector (MIT)
+ * + zxing-wasm, servis depuis vendor/ (aucun CDN) et mis en cache par le service worker → marche hors ligne. */
+const BD_JS = 'vendor/barcode-detector/barcode-detector.ponyfill.js';
+const BD_WASM = 'vendor/barcode-detector/zxing_reader.wasm';
+const SCAN_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+let bdPromise = null;
+function loadBarcodePolyfill() {
+  if (bdPromise) return bdPromise;
+  bdPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script'); s.src = BD_JS; s.async = true;
+    s.onload = async () => {
+      try {
+        const api = window.BarcodeDetectionAPI;
+        if (!api || !api.BarcodeDetector) throw new Error('polyfill absent');
+        const wasmUrl = new URL(BD_WASM, document.baseURI).href;
+        // charge le .wasm local tout de suite (pas de CDN), pour que le 1er scan soit rapide
+        await api.prepareZXingModule({ overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? wasmUrl : prefix + path) }, fireImmediately: true });
+        resolve(api.BarcodeDetector);
+      } catch (e) { bdPromise = null; reject(e); }
+    };
+    s.onerror = () => { bdPromise = null; s.remove(); reject(new Error('chargement du lecteur impossible')); };
+    document.head.appendChild(s);
+  });
+  return bdPromise;
+}
+async function getBarcodeDetector() {
+  if ('BarcodeDetector' in window) {
+    try {
+      const f = await window.BarcodeDetector.getSupportedFormats();
+      if (f.includes('ean_13')) return { det: new window.BarcodeDetector({ formats: SCAN_FORMATS.filter(x => f.includes(x)) }), native: true };
+    } catch { /* natif inutilisable → polyfill */ }
+  }
+  const Cls = await loadBarcodePolyfill();
+  return { det: new Cls({ formats: SCAN_FORMATS }), native: false };
+}
+let scanStream = null, scanTimer = null, scanActive = false;
 async function startScan() {
-  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
-    toast('Scan non pris en charge par ce navigateur : tape le code à la main');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('Caméra indisponible ici : tape le code à la main');
     $('#barcodeInput').focus(); return;
   }
-  let detector;
-  try { detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] }); }
-  catch { detector = new BarcodeDetector(); }
-  openSheet(`<h3>Scanner un code-barres</h3><p class="hint">Vise le code-barres du produit.</p>
-    <video id="scanVideo" playsinline muted autoplay></video>
-    <button class="btn ghost block" style="margin-top:10px" data-close>Annuler</button>`, stopScan);
+  scanActive = true;
+  openSheet(`<h3>Scanner un code-barres</h3><p class="hint" id="scanStatus">Ouverture de la caméra…</p>
+    <div class="scan-box"><video id="scanVideo" playsinline webkit-playsinline muted autoplay></video><div class="scan-frame"></div></div>
+    <form class="row mt8" id="scanManual"><input type="text" inputmode="numeric" pattern="[0-9]*" id="scanManualInput" placeholder="ou tape le code"><button class="btn ghost" type="submit">OK</button></form>
+    <button class="btn ghost block" data-close>Annuler</button>`, stopScan);
+  $('#scanManual').onsubmit = e => { e.preventDefault(); const c = $('#scanManualInput').value; closeSheet(); lookupBarcode(c); };
+  const detP = getBarcodeDetector();
+  detP.catch(() => {});
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    const v = $('#scanVideo'); v.srcObject = scanStream; await v.play();
-    scanTimer = setInterval(async () => {
-      try {
-        const codes = await detector.detect(v);
-        if (codes.length) { const c = codes[0].rawValue; closeSheet(); lookupBarcode(c); }
-      } catch { /* image pas prête */ }
-    }, 300);
-  } catch (e) { closeSheet(); toast('Caméra refusée ou indisponible'); }
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if (!scanActive) { stopScan(); return; }
+    const v = $('#scanVideo'); v.setAttribute('playsinline', ''); v.muted = true; v.srcObject = scanStream; await v.play();
+  } catch (e) { closeSheet(); toast('Caméra refusée ou indisponible : tape le code à la main'); $('#barcodeInput').focus(); return; }
+  let det;
+  try { $('#scanStatus').textContent = 'Préparation du lecteur…'; ({ det } = await getBarcodeDetector()); }
+  catch (e) { if (scanActive) $('#scanStatus').textContent = 'Lecteur indisponible : tape le code ci-dessous.'; return; }
+  if (!scanActive) return;
+  $('#scanStatus').textContent = 'Vise le code-barres, bien à plat et éclairé.';
+  const v = $('#scanVideo'), cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
+  const tick = async () => {
+    if (!scanActive) return;
+    try {
+      if (v.readyState >= 2 && v.videoWidth) {
+        const sc = Math.min(1, 960 / v.videoWidth);
+        cv.width = Math.round(v.videoWidth * sc); cv.height = Math.round(v.videoHeight * sc);
+        ctx.drawImage(v, 0, 0, cv.width, cv.height);
+        const codes = await det.detect(cv);
+        const hit = codes.find(c => /^\d{8,14}$/.test(c.rawValue));
+        if (hit && scanActive) { if (navigator.vibrate) navigator.vibrate(60); closeSheet(); lookupBarcode(hit.rawValue); return; }
+      }
+    } catch { /* image pas prête */ }
+    scanTimer = setTimeout(tick, 200);
+  };
+  tick();
 }
 function stopScan() {
-  clearInterval(scanTimer); scanTimer = null;
+  scanActive = false;
+  clearTimeout(scanTimer); scanTimer = null;
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
 }
 
@@ -1282,6 +1336,125 @@ function openPresetEditor(id) {
   };
 }
 
+/* ---------- Bibliothèque d'exercices ----------
+ * Photos (début / fin du mouvement) et muscles : free-exercise-db (yuhonas, Unlicense / domaine public),
+ * https://github.com/yuhonas/free-exercise-db – images copiées dans exercises/<id>/0.jpg et 1.jpg.
+ * Technique : traduite et résumée en français. */
+const MUSCLES_FR = { chest: 'pectoraux', shoulders: 'épaules', triceps: 'triceps', biceps: 'biceps', lats: 'grand dorsal', 'middle back': 'milieu du dos',
+  'lower back': 'lombaires', quadriceps: 'quadriceps', hamstrings: 'ischio-jambiers', glutes: 'fessiers', calves: 'mollets', abdominals: 'abdos',
+  forearms: 'avant-bras', traps: 'trapèzes' };
+const EX_GROUPS = ['Pectoraux', 'Dos', 'Jambes', 'Épaules', 'Bras', 'Abdos'];
+const EXERCISES = [
+  { id: 'Dumbbell_Bench_Press', name: 'Développé couché haltères', grp: 'Pectoraux', prim: ['chest'], sec: ['shoulders', 'triceps'],
+    tech: ['Allongé sur le banc, pieds bien à plat, haltères posés sur les cuisses puis amenés au-dessus de la poitrine, paumes vers les pieds.',
+      'Serre les omoplates et garde un léger creux dans le bas du dos.',
+      'Descends lentement les haltères sur les côtés de la poitrine, coudes à environ 45° du corps.',
+      'Pousse vers le haut en soufflant jusqu\u2019à tendre les bras, sans cogner les haltères.'] },
+  { id: 'Barbell_Bench_Press_-_Medium_Grip', name: 'Développé couché barre', grp: 'Pectoraux', prim: ['chest'], sec: ['shoulders', 'triceps'],
+    tech: ['Allongé, yeux sous la barre, mains un peu plus larges que les épaules.', 'Décroche la barre bras tendus, au-dessus de la poitrine, omoplates serrées.',
+      'Descends en inspirant jusqu\u2019à toucher le milieu de la poitrine.', 'Pousse en soufflant jusqu\u2019à bras tendus. Avec une charge lourde, fais-toi parer.'] },
+  { id: 'Close-Grip_Barbell_Bench_Press', name: 'Développé couché prise serrée', grp: 'Bras', prim: ['triceps'], sec: ['chest', 'shoulders'],
+    tech: ['Comme le développé couché, mais mains écartées de la largeur des épaules.', 'Garde les coudes près du corps pendant toute la descente.',
+      'Descends la barre vers le bas de la poitrine.', 'Remonte en poussant avec les triceps jusqu\u2019à bras tendus.'] },
+  { id: 'Incline_Dumbbell_Press', name: 'Développé incliné haltères', grp: 'Pectoraux', prim: ['chest'], sec: ['shoulders', 'triceps'],
+    tech: ['Banc incliné à 30-45°, haltères au-dessus du haut de la poitrine, paumes vers l\u2019avant.', 'Descends lentement jusqu\u2019à sentir l\u2019étirement des pectoraux.',
+      'Pousse en soufflant et rapproche les haltères en haut, sans les cogner.'] },
+  { id: 'Bent_Over_Barbell_Row', name: 'Rowing barre buste penché', grp: 'Dos', prim: ['middle back'], sec: ['biceps', 'lats', 'shoulders'],
+    tech: ['Barre en main, paumes vers toi, genoux légèrement fléchis.', 'Penche le buste vers l\u2019avant presque à l\u2019horizontale, dos bien droit, regard devant.',
+      'Tire la barre vers le bas du ventre en serrant les omoplates, coudes près du corps.', 'Marque une pause en haut, puis redescends lentement bras tendus.'] },
+  { id: 'One-Arm_Dumbbell_Row', name: 'Rowing haltère un bras', grp: 'Dos', prim: ['middle back'], sec: ['biceps', 'lats', 'shoulders'],
+    tech: ['Main et genou du même côté sur le banc, dos plat parallèle au sol.', 'Haltère dans l\u2019autre main, bras tendu vers le sol.',
+      'Tire l\u2019haltère vers la hanche en gardant le coude près du corps.', 'Serre le dos en haut, puis redescends lentement. Fais toutes les reps d\u2019un côté, puis change.'] },
+  { id: 'Pullups', name: 'Tractions prise large', grp: 'Dos', prim: ['lats'], sec: ['biceps', 'middle back'],
+    tech: ['Mains en pronation (paumes vers l\u2019avant), plus larges que les épaules.', 'Bras tendus, sors la poitrine et penche-toi légèrement en arrière.',
+      'Tire en ramenant les coudes vers le bas et l\u2019arrière jusqu\u2019à ce que la barre arrive au haut de la poitrine.', 'Pause d\u2019une seconde, puis redescends lentement jusqu\u2019à bras tendus.'] },
+  { id: 'V-Bar_Pullup', name: 'Tractions prise neutre', grp: 'Dos', prim: ['lats'], sec: ['biceps', 'middle back', 'shoulders'],
+    tech: ['Paumes face à face, sur des poignées parallèles ou une poignée en V posée sur la barre.', 'Suspends-toi, sors la poitrine et penche-toi légèrement en arrière.',
+      'Tire avec le dos jusqu\u2019à ce que la poitrine arrive presque aux poignées.', 'Redescends lentement jusqu\u2019à bras tendus.'] },
+  { id: 'Dips_-_Chest_Version', name: 'Dips buste penché', grp: 'Pectoraux', prim: ['chest'], sec: ['shoulders', 'triceps'],
+    tech: ['Aux barres parallèles, monte en appui, bras tendus.', 'Descends lentement en penchant le buste d\u2019environ 30° vers l\u2019avant, coudes légèrement écartés.',
+      'Arrête-toi quand tu sens l\u2019étirement des pectoraux (épaules à hauteur des coudes environ).', 'Remonte en poussant et serre les pectoraux en haut.'] },
+  { id: 'Barbell_Deadlift', name: 'Soulevé de terre', grp: 'Dos', prim: ['lower back'], sec: ['glutes', 'hamstrings', 'quadriceps', 'middle back', 'lats', 'traps', 'forearms', 'calves'],
+    tech: ['Pieds largeur de hanches, barre au-dessus du milieu des pieds, tibias presque contre la barre.', 'Fléchis les genoux, attrape la barre juste à l\u2019extérieur des jambes, dos plat, poitrine sortie.',
+      'Pousse dans le sol avec les jambes et monte en gardant la barre collée aux jambes jusqu\u2019à être droit.', 'Redescends en contrôle en poussant les fesses en arrière. Ne jamais arrondir le dos.'] },
+  { id: 'Romanian_Deadlift', name: 'Soulevé de terre roumain', grp: 'Jambes', prim: ['hamstrings'], sec: ['glutes', 'lower back', 'calves'],
+    tech: ['Debout, barre en main, genoux légèrement fléchis et bloqués dans cette position.', 'Pousse les fesses en arrière et descends la barre le long des cuisses, dos bien droit.',
+      'Descends jusqu\u2019à sentir l\u2019étirement derrière les cuisses (sous les genoux environ).', 'Remonte en poussant les hanches vers l\u2019avant et en serrant les fessiers.'] },
+  { id: 'Barbell_Squat', name: 'Squat barre', grp: 'Jambes', prim: ['quadriceps'], sec: ['glutes', 'hamstrings', 'lower back', 'calves'],
+    tech: ['Dans un rack, barre sur le haut du dos (pas sur la nuque), pieds largeur d\u2019épaules, pointes légèrement ouvertes.', 'Garde le dos droit et la tête haute.',
+      'Descends en fléchissant genoux et hanches jusqu\u2019à ce que les cuisses soient au moins parallèles au sol, genoux dans l\u2019axe des pieds.', 'Remonte en poussant dans les talons.'] },
+  { id: 'Split_Squat_with_Dumbbells', name: 'Squat bulgare', grp: 'Jambes', prim: ['quadriceps'], sec: ['glutes', 'hamstrings'],
+    tech: ['Pied arrière posé sur un banc, pied avant un grand pas devant, un haltère dans chaque main.', 'Descends en fléchissant le genou avant, buste droit, genou avant dans l\u2019axe du pied.',
+      'Descends jusqu\u2019à ce que la cuisse avant soit parallèle au sol.', 'Remonte en poussant dans le talon avant. Fais toutes les reps d\u2019une jambe, puis change.'] },
+  { id: 'Goblet_Squat', name: 'Goblet squat', grp: 'Jambes', prim: ['quadriceps'], sec: ['glutes', 'hamstrings', 'calves', 'shoulders'],
+    tech: ['Tiens un haltère verticalement contre la poitrine, mains sous la tête de l\u2019haltère.', 'Pieds un peu plus larges que les épaules, pointes légèrement ouvertes.',
+      'Descends en poussant les genoux vers l\u2019extérieur, coudes entre les genoux, dos droit.', 'Remonte en poussant dans les talons.'] },
+  { id: 'Barbell_Hip_Thrust', name: 'Hip thrust barre', grp: 'Jambes', prim: ['glutes'], sec: ['hamstrings', 'calves'],
+    tech: ['Haut du dos appuyé contre un banc, barre sur les hanches (mets une mousse pour le confort).', 'Pieds à plat, largeur des hanches, genoux fléchis.',
+      'Pousse dans les talons pour monter les hanches jusqu\u2019à ce que le corps soit aligné des épaules aux genoux.', 'Serre fort les fessiers une seconde en haut, puis redescends lentement.'] },
+  { id: 'Standing_Military_Press', name: 'Développé militaire barre', grp: 'Épaules', prim: ['shoulders'], sec: ['triceps'],
+    tech: ['Debout, barre sur le haut de la poitrine, mains un peu plus larges que les épaules.', 'Gaine les abdos et serre les fessiers pour ne pas cambrer.',
+      'Pousse la barre au-dessus de la tête jusqu\u2019à bras tendus, en reculant un peu la tête au passage.', 'Redescends lentement jusqu\u2019aux clavicules.'] },
+  { id: 'Dumbbell_Shoulder_Press', name: 'Développé épaules haltères assis', grp: 'Épaules', prim: ['shoulders'], sec: ['triceps'],
+    tech: ['Assis sur un banc avec dossier, haltères à hauteur des épaules, paumes vers l\u2019avant.', 'Pousse les haltères vers le haut en soufflant jusqu\u2019à ce qu\u2019ils se rejoignent presque.',
+      'Redescends lentement à hauteur des épaules.'] },
+  { id: 'Lying_Triceps_Press', name: 'Barre au front', grp: 'Bras', prim: ['triceps'], sec: [],
+    tech: ['Allongé sur un banc, barre (EZ de préférence) tenue bras tendus au-dessus de la poitrine, prise moyenne.', 'Coudes serrés et fixes : seuls les avant-bras bougent.',
+      'Descends lentement la barre vers le front en fléchissant les coudes.', 'Remonte en contractant les triceps.'] },
+  { id: 'Dumbbell_Bicep_Curl', name: 'Curl haltères', grp: 'Bras', prim: ['biceps'], sec: ['forearms'],
+    tech: ['Debout, un haltère dans chaque main, bras le long du corps, paumes vers l\u2019avant.', 'Coudes collés au corps, monte les haltères en contractant les biceps.',
+      'Serre une seconde en haut, puis redescends lentement. Ne te balance pas.'] },
+  { id: 'Hammer_Curls', name: 'Curl marteau', grp: 'Bras', prim: ['biceps'], sec: ['forearms'],
+    tech: ['Debout, haltères le long du corps, paumes face à face (prise marteau).', 'Coudes fixes, monte les haltères vers les épaules sans tourner les poignets.',
+      'Redescends lentement.'] },
+  { id: 'Side_Lateral_Raise', name: 'Élévations latérales', grp: 'Épaules', prim: ['shoulders'], sec: [],
+    tech: ['Debout, haltères le long du corps, buste très légèrement penché vers l\u2019avant.', 'Coudes légèrement fléchis, monte les bras sur les côtés jusqu\u2019à hauteur des épaules.',
+      'Pause en haut, puis redescends lentement. Prends léger : ce sont les épaules qui travaillent, pas l\u2019élan.'] },
+  { id: 'Hanging_Leg_Raise', name: 'Relevé de jambes suspendu', grp: 'Abdos', prim: ['abdominals'], sec: [],
+    tech: ['Suspendu à une barre, bras tendus, jambes droites.', 'Monte les jambes en enroulant le bassin jusqu\u2019à former un angle de 90° avec le buste.',
+      'Tiens une seconde, puis redescends lentement sans te balancer. Plus facile : genoux pliés.'] },
+  { id: 'Plank', name: 'Gainage (planche)', grp: 'Abdos', prim: ['abdominals'], sec: [],
+    tech: ['Appui sur les avant-bras et la pointe des pieds, coudes sous les épaules.', 'Corps bien droit de la tête aux talons : ni fesses en l\u2019air, ni dos creusé.',
+      'Serre les abdos et les fessiers et respire normalement. Tiens le plus longtemps possible.'] }
+];
+const exById = id => EXERCISES.find(e => e.id === id);
+const exByName = name => EXERCISES.find(e => e.name === name);
+const exImg = (e, i) => `exercises/${e.id}/${i}.jpg`;
+const musclesFr = l => l.map(m => MUSCLES_FR[m] || m);
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function exMuscleLine(e) {
+  return `🎯 <b>${esc(cap(musclesFr(e.prim).join(', ')))}</b>${e.sec.length ? ` <span class="muted">· aussi ${esc(musclesFr(e.sec).join(', '))}</span>` : ''}`;
+}
+function exInProgram(e) { return Object.entries(WORKOUTS).filter(([, l]) => l.some(x => x.name === e.name)).map(([k]) => k); }
+function openExercise(id, img = 0) {
+  const e = exById(id); if (!e) return;
+  const prog = exInProgram(e);
+  openSheet(`<h3>${esc(e.name)}</h3>
+    <p class="hint">${esc(e.grp)}${prog.length ? ` · dans ta séance ${prog.join(' et ')}` : ''}</p>
+    <div class="exv-seg seg" id="exvSeg"><button data-exi="0" class="${img === 0 ? 'active' : ''}">Début</button><button data-exi="1" class="${img === 1 ? 'active' : ''}">Fin</button></div>
+    <img class="exv-img" id="exvImg" src="${exImg(e, img)}" alt="${esc(e.name)} – ${img ? 'fin' : 'début'} du mouvement">
+    <p class="ex-mus">${exMuscleLine(e)}</p>
+    <h4>Technique</h4>
+    <ol class="steps">${e.tech.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+    <p class="hint">Photos : free-exercise-db (domaine public). Touche la photo pour voir l\u2019autre position.</p>
+    <button class="btn ghost block r-close" data-close>Fermer</button>`);
+  let cur = img;
+  const set = i => { cur = i; $('#exvImg').src = exImg(e, i); $('#exvImg').alt = `${e.name} – ${i ? 'fin' : 'début'} du mouvement`; $$('#exvSeg button').forEach(b => b.classList.toggle('active', +b.dataset.exi === i)); };
+  $('#exvSeg').onclick = ev => { const b = ev.target.closest('[data-exi]'); if (b) set(+b.dataset.exi); };
+  $('#exvImg').onclick = () => set(1 - cur);
+}
+let exLibGroup = 'all';
+function renderExLib() {
+  $$('#exLibChips .chip').forEach(c => c.classList.toggle('active', c.dataset.g === exLibGroup));
+  const list = EXERCISES.filter(e => exLibGroup === 'all' || e.grp === exLibGroup);
+  $('#exLib').innerHTML = list.map(e => {
+    const prog = exInProgram(e);
+    return `<li data-exo="${e.id}"><img class="ex-thumb" src="${exImg(e, 0)}" alt="" loading="lazy">
+      <div class="e-main"><div class="e-name">${esc(e.name)}</div><div class="e-sub">${esc(cap(musclesFr(e.prim).join(', ')))}${e.sec.length ? ' · ' + esc(musclesFr(e.sec).slice(0, 3).join(', ')) : ''}</div></div>
+      ${prog.length ? `<span class="badge">${prog.join(' ')}</span>` : ''}</li>`;
+  }).join('');
+}
+
 /* ---------- Entraînement ---------- */
 function lastWorkout() { return S.workouts.slice().sort((a, b) => (a.date + a.t).localeCompare(b.date + b.t)).pop(); }
 function suggestedType() { const w = lastWorkout(); return w ? (w.type === 'A' ? 'B' : 'A') : 'A'; }
@@ -1306,9 +1479,12 @@ function renderTrain() {
     ? `Dernière séance : ${lw.type} (${dateLabel(lw.date).toLowerCase()}). Séance conseillée : ${sug}.`
     : 'Première séance : on commence par la A. Ensuite tu alternes A / B, un jour sur deux.';
   $('#sessionExercises').innerHTML = d.ex.map((ex, i) => {
-    const meta = def[i] || { target: '' }, lp = lastPerf(ex.name);
+    const meta = def[i] || { target: '' }, lp = lastPerf(ex.name), exB = exByName(ex.name);
     return `<div class="ex" data-ex="${i}">
       <div class="ex-head"><span class="ex-name">${esc(ex.name)}</span><span class="ex-target">${ex.sets.length}×${esc(meta.target)}</span></div>
+      ${exB ? `<div class="ex-media">${[0, 1].map(k => `<button class="ex-ph" data-exphoto="${exB.id}" data-i="${k}" aria-label="${k ? 'Fin' : 'Début'} du mouvement, agrandir"><img src="${exImg(exB, k)}" alt="" loading="lazy"><span>${k ? 'Fin' : 'Début'}</span></button>`).join('')}</div>
+      <p class="ex-mus">${exMuscleLine(exB)}</p>
+      <details class="ex-tech"><summary>Technique</summary><ol class="steps">${exB.tech.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>` : ''}
       <div class="ex-last">${lp ? `Dernière fois (${dateLabel(lp.date).toLowerCase()}) : ${lp.sets.map(setTxt).join(' · ')}` : 'Pas encore de perf enregistrée'}</div>
       ${ex.sets.map((s, j) => {
         const ph = lp && lp.sets[j] ? lp.sets[j] : null;
@@ -1425,7 +1601,7 @@ function show(view) {
   window.scrollTo(0, 0);
   history.replaceState(null, '', '#' + (view === 'recipes' && recipeMode === 'courses' ? 'courses' : view));
 }
-function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderShop(); renderTrain(); renderProgress(); renderSettings(); }
+function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderShop(); renderTrain(); renderExLib(); renderProgress(); renderSettings(); }
 
 /* ---------- Événements ---------- */
 function bind() {
@@ -1513,6 +1689,9 @@ function bind() {
     s.ok = !s.ok; ok.classList.toggle('on', s.ok); save();
   });
   $('#finishSession').onclick = finishSession;
+  $('#sessionExercises').addEventListener('click', e => { const b = e.target.closest('[data-exphoto]'); if (b) openExercise(b.dataset.exphoto, +b.dataset.i); });
+  $('#exLib').addEventListener('click', e => { const li = e.target.closest('[data-exo]'); if (li) openExercise(li.dataset.exo); });
+  $('#exLibChips').addEventListener('click', e => { const c = e.target.closest('[data-g]'); if (c) { exLibGroup = c.dataset.g; renderExLib(); } });
   $('#sessionHistory').addEventListener('click', e => {
     const b = e.target.closest('[data-delw]'); if (!b || !confirm('Supprimer cette séance ?')) return;
     S.workouts = S.workouts.filter(w => w.id !== b.dataset.delw); save(); renderTrain();
@@ -1554,4 +1733,4 @@ renderAll();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; } }; // pour le débogage / les tests
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests

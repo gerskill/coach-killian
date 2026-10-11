@@ -164,6 +164,15 @@
       <button class="btn block success" id="finishSession">✓ Séance terminée</button>
     </div>
     <div class="card">
+      <h2>Bibliothèque d'exercices</h2>
+      <p class="hint">Photos du début et de la fin du mouvement, technique et muscles. A / B = dans ta séance.</p>
+      <div class="chips" id="exLibChips">
+        <button class="chip active" data-g="all">Tous</button><button class="chip" data-g="Pectoraux">Pecs</button><button class="chip" data-g="Dos">Dos</button>
+        <button class="chip" data-g="Jambes">Jambes</button><button class="chip" data-g="Épaules">Épaules</button><button class="chip" data-g="Bras">Bras</button><button class="chip" data-g="Abdos">Abdos</button>
+      </div>
+      <ul class="results" id="exLib"></ul>
+    </div>
+    <div class="card">
       <h2>Historique des séances</h2>
       <ul class="entries" id="sessionHistory"></ul>
     </div>
@@ -238,7 +247,13 @@
       </div>
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
-    <p class="hint center">Coach Killian · v6 · données stockées localement</p>
+    <div class="card">
+      <h2>Crédits</h2>
+      <p class="hint" style="margin:0">Photos et descriptions d'exercices — Source : <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db ↗</a> (domaine public, Unlicense), technique traduite en français.<br>
+      Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
+      Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
+    </div>
+    <p class="hint center">Coach Killian · v7 · données stockées localement</p>
   </section>
 </main>
 

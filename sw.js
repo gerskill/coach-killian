@@ -1,8 +1,14 @@
 /* Coach Killian – service worker : app shell en cache, Open Food Facts en réseau */
-const CACHE = 'coach-killian-v6';
+const CACHE = 'coach-killian-v7';
 const SHELL = [
   './', './index.html', './style.css', './app.js', './manifest.json',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'
+  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
+  // lecteur de codes-barres pour iPhone (polyfill + wasm locaux, utilisables hors ligne)
+  './vendor/barcode-detector/barcode-detector.ponyfill.js', './vendor/barcode-detector/zxing_reader.wasm',
+  // photos des exercices des séances A et B (les autres se mettent en cache à la 1re ouverture)
+  ...['Dumbbell_Bench_Press', 'Bent_Over_Barbell_Row', 'Split_Squat_with_Dumbbells', 'Standing_Military_Press', 'Dumbbell_Bicep_Curl',
+    'Barbell_Deadlift', 'Dips_-_Chest_Version', 'Pullups', 'Barbell_Hip_Thrust', 'Lying_Triceps_Press']
+    .flatMap(id => [`./exercises/${id}/0.jpg`, `./exercises/${id}/1.jpg`])
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
