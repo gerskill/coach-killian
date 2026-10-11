@@ -410,9 +410,315 @@ function openRecipe(id, mult = 1) {
     ${r.oats ? `<p class="r-note">🔄 ${esc(SANS_AVOINE)}</p>` : ''}
     <p class="r-keep">🧊 <b>Conservation :</b> ${esc(r.keep)}</p>
     <button class="btn block" id="rAdd">＋ Ajouter ${isToday ? 'à aujourd\u2019hui' : 'au ' + esc(parseKey(curDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} (1 ${esc(unit === 'portion' || unit === 'bocal' ? unit : 'recette')})</button>
+    <button class="btn ghost block mt8" id="rShop">🛒 Ajouter les ingrédients à la liste (${mult} ${esc(unitN(mult))})</button>
     <button class="btn ghost block r-close" data-close>Fermer</button>`);
   $('#rPortions').onclick = e => { const b = e.target.closest('[data-rp]'); if (b) { const top = $('.sheet').scrollTop; openRecipe(id, +b.dataset.rp); $('.sheet').scrollTop = top; } };
+  $('#rShop').onclick = () => {
+    const n = addRecipeToShop(r, mult), b = $('#rShop');
+    b.textContent = `✓ ${n} ingrédients ajoutés à la liste`; b.disabled = true;
+    toast(`🛒 ${n} ingrédients ajoutés à ta liste de courses`);
+  };
   $('#rAdd').onclick = () => { addEntry({ name: m.name, kcal: m.kcal, p: m.p, g: m.g, l: m.l }, '1 ' + (unit === 'portion' || unit === 'bocal' ? unit : 'recette')); closeSheet(); };
+}
+
+/* ---------- Liste de courses ---------- */
+// stockée à part (clé séparée) pour ne pas toucher aux données existantes ; incluse dans l'export JSON
+const SHOP_KEY = 'coachKillian.courses';
+const SHOP_CATS = [
+  { id: 'viande', e: '🥩', name: 'Viandes & poissons' },
+  { id: 'feculents', e: '🍚', name: 'Féculents' },
+  { id: 'legumes', e: '🥦', name: 'Légumes' },
+  { id: 'laitiers', e: '🥛', name: 'Produits laitiers & œufs' },
+  { id: 'fruits', e: '🍎', name: 'Fruits' },
+  { id: 'epicerie', e: '🫙', name: 'Épicerie' },
+  { id: 'epices', e: '🧂', name: 'Épices' },
+  { id: 'complement', e: '💊', name: 'Complément' },
+  { id: 'autre', e: '🛒', name: 'Autre' }
+];
+// [clé, nom, catégorie, reconnaissance (texte sans accents), unité de comptage singulier|pluriel]
+const SHOP_DEFAULTS = [
+  ['poulet', 'Filets de poulet', 'viande', /poulet/],
+  ['steak', 'Steak haché 5 %', 'viande', /steak|viande hachee|boeuf hache/],
+  ['thon', 'Thon au naturel (boîtes)', 'viande', /thon/, 'boîte|boîtes'],
+  ['riz', 'Riz', 'feculents', /\briz\b/],
+  ['pates', 'Pâtes', 'feculents', /^pates?\b|spaghetti|penne|coquillette/],
+  ['semoule', 'Semoule de couscous', 'feculents', /semoule/],
+  ['lentilles', 'Lentilles vertes', 'feculents', /lentille/],
+  ['pdt', 'Pommes de terre', 'feculents', /pommes? de terre/],
+  ['patate', 'Patate douce', 'feculents', /patates? douces?/],
+  ['pain', 'Pain complet', 'feculents', /\bpain\b/, 'tranche|tranches'],
+  ['farine', 'Farine', 'feculents', /farine/],
+  ['tortillas', 'Tortillas (wraps)', 'feculents', /tortilla|wrap/, 'tortilla|tortillas'],
+  ['legsurg', 'Légumes surgelés (poêlée, brocolis, haricots verts)', 'legumes', /^legumes|poelee|brocoli|haricots? verts?/],
+  ['courgettes', 'Courgettes', 'legumes', /courgette/],
+  ['carottes', 'Carottes', 'legumes', /carotte/],
+  ['poivrons', 'Poivrons', 'legumes', /poivron/],
+  ['oignons', 'Oignons', 'legumes', /oignon/],
+  ['ail', 'Ail', 'legumes', /^ail\b/],
+  ['oeufs', 'Œufs', 'laitiers', /\boeufs?\b/],
+  ['lait', 'Lait demi-écrémé', 'laitiers', /^lait\b(?! de coco)/],
+  ['fblanc', 'Fromage blanc', 'laitiers', /fromage blanc/],
+  ['ygrec', 'Yaourt grec', 'laitiers', /yaourt grec|yogourt grec/],
+  ['beurre', 'Beurre', 'laitiers', /^beurre\b(?! de cacahuete)/],
+  ['frape', 'Fromage râpé', 'laitiers', /emmental|fromage rape|gruyere/],
+  ['bananes', 'Bananes', 'fruits', /banane/],
+  ['pommes', 'Pommes', 'fruits', /^pommes?\b(?! de terre)/],
+  ['frouges', 'Fruits rouges surgelés', 'fruits', /fruits rouges/],
+  ['jus', 'Jus d’orange', 'fruits', /jus d.?orange/],
+  ['stomate', 'Sauce tomate', 'epicerie', /sauce tomate|coulis|tomates? concassee|passata/],
+  ['coco', 'Lait de coco', 'epicerie', /lait de coco/],
+  ['pb', 'Beurre de cacahuète', 'epicerie', /beurre de cacahuete/],
+  ['miel', 'Miel', 'epicerie', /\bmiel\b/],
+  ['huile', 'Huile d’olive', 'epicerie', /^huile/],
+  ['cacao', 'Cacao non sucré', 'epicerie', /cacao/],
+  ['chia', 'Graines de chia', 'epicerie', /chia/],
+  ['flocons', 'Flocons d’avoine fins', 'epicerie', /flocons|avoine/],
+  ['curry', 'Curry', 'epices', /^curry\b/],
+  ['raz', 'Ras el hanout', 'epices', /ras el hanout/],
+  ['cumin', 'Cumin', 'epices', /cumin/],
+  ['paprika', 'Paprika', 'epices', /paprika/],
+  ['piment', 'Piment / chili', 'epices', /piment|^chili\b/],
+  ['sel', 'Sel', 'epices', /^sel\b/],
+  ['poivre', 'Poivre', 'epices', /^poivre\b/],
+  ['herbes', 'Herbes de Provence', 'epices', /herbes/],
+  ['creatine', 'Créatine monohydrate', 'complement', /creatine/]
+].map(([k, name, cat, re, cnt]) => ({ k, name, cat, re, cnt }));
+// catégorie devinée pour un article perso (« skyr » → produits laitiers…)
+const SHOP_GUESS = [
+  ['viande', /jambon|dinde|saumon|poisson|cabillaud|sardine|maquereau|crevette|boeuf|porc|viande|merguez|saucisse|lardon/],
+  ['laitiers', /creme|fromage|yaourt|skyr|mozza|parmesan|comte|feta|ricotta|kefir|oeuf|lait\b/],
+  ['legumes', /salade|tomate|crudite|epinard|champignon|poireau|concombre|aubergine|chou|petits? pois|mais|avocat|echalote/],
+  ['fruits', /fruit|orange|citron|kiwi|fraise|framboise|myrtille|raisin|poire|mangue|ananas|clementine|compote|datte/],
+  ['feculents', /pain|biscotte|quinoa|boulgour|nouille|gnocchi|haricots? rouges|pois chiches|cereale|muesli|granola/],
+  ['epices', /epice|muscade|cannelle|thym|laurier|basilic|persil|gingembre|curcuma|origan|moutarde/],
+  ['epicerie', /sauce|bouillon|soja|vinaigre|ketchup|mayo|confiture|sucre|chocolat|amande|noix|cacahuete|noisette|conserve|sirop|cafe|the\b|whey/],
+  ['complement', /creatine|vitamine|omega|magnesium|complement/]
+];
+const shopNorm = s => norm(String(s || '')).replace(/œ/g, 'oe').replace(/æ/g, 'ae').replace(/[’'`]/g, ' ').replace(/\s+/g, ' ').trim();
+const shopDefOf = name => { const n = shopNorm(name); return SHOP_DEFAULTS.find(d => d.re.test(n)); };
+function shopGuessCat(name) {
+  const d = shopDefOf(name); if (d) return d.cat;
+  const n = shopNorm(name), g = SHOP_GUESS.find(([, re]) => re.test(n));
+  return g ? g[0] : 'autre';
+}
+function shopFresh() {
+  return { version: 1, cats: SHOP_CATS.map(c => ({ ...c })),
+    items: SHOP_DEFAULTS.map(d => ({ id: 'd-' + d.k, k: d.k, name: d.name, cat: d.cat, qty: '', done: false })) };
+}
+function shopSanitize(d) {
+  if (!d || !Array.isArray(d.items)) return null;
+  const cats = (Array.isArray(d.cats) ? d.cats : []).filter(c => c && c.id && c.name).map(c => ({ id: String(c.id), e: String(c.e || '🏷️'), name: String(c.name) }));
+  for (const c of SHOP_CATS) if (!cats.some(x => x.id === c.id)) cats.splice(c.id === 'autre' ? cats.length : SHOP_CATS.indexOf(c), 0, { ...c });
+  const items = d.items.filter(i => i && i.name).map(i => ({ id: String(i.id || uid()), k: i.k || undefined, name: String(i.name),
+    cat: cats.some(c => c.id === i.cat) ? i.cat : 'autre', qty: String(i.qty || ''), done: !!i.done }));
+  return { version: 1, cats, items };
+}
+function shopLoad() {
+  try { const raw = localStorage.getItem(SHOP_KEY); return (raw && shopSanitize(JSON.parse(raw))) || shopFresh(); }
+  catch (e) { console.warn('courses', e); return shopFresh(); }
+}
+let C = shopLoad();
+function shopSave() {
+  // une catégorie perso vide disparaît d'elle-même
+  C.cats = C.cats.filter(c => !c.id.startsWith('c-') || C.items.some(i => i.cat === c.id));
+  try { localStorage.setItem(SHOP_KEY, JSON.stringify(C)); } catch { toast('Stockage plein'); }
+}
+const shopLeft = () => C.items.filter(i => !i.done).length;
+
+/* quantités : « 840 g » + « 360 g » = « 1,2 kg » ; formats différents → « 300 g + 1 tranche » */
+function cntLabel(lbl, n) { if (!lbl) return ''; const [one, many] = lbl.split('|'); return n > 1 ? (many || one) : one; }
+function qtyText(a) {
+  if (a.dim === 'g') return a.v >= 1000 ? `${nb(Math.round(a.v / 10) / 100)} kg` : `${r0(a.v)} g`;
+  if (a.dim === 'ml') return a.v >= 1000 ? `${nb(Math.round(a.v / 10) / 100)} L` : `${nb(r1(a.v / 10))} cl`;
+  const n = Math.round(a.v * 10) / 10; return `${nb(n)}${a.lbl ? ' ' + cntLabel(a.lbl, n) : ''}`;
+}
+function parseQtyText(s) {
+  const t = shopNorm(s).replace(/^≈\s*/, '');
+  let m = t.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml)$/);
+  if (m) { const v = parseFloat(m[1].replace(',', '.')), u = m[2]; return u === 'kg' ? { dim: 'g', v: v * 1000 } : u === 'g' ? { dim: 'g', v } : { dim: 'ml', v: v * (u === 'l' ? 1000 : u === 'cl' ? 10 : 1) }; }
+  m = t.match(/^(\d+(?:[.,]\d+)?)(?:\s+(.+))?$/);
+  if (m) return { dim: 'n', v: parseFloat(m[1].replace(',', '.')), word: (m[2] || '').replace(/s$/, '') };
+  return null;
+}
+function mergeQty(old, add) {
+  if (!add) return old || '';
+  if (!old || !old.trim()) return qtyText(add);
+  const p = parseQtyText(old);
+  if (p && p.dim === add.dim) {
+    if (p.dim !== 'n') return qtyText({ dim: p.dim, v: p.v + add.v });
+    const aw = shopNorm(cntLabel(add.lbl || '', 1));
+    if (p.word === aw || (!p.word && !aw)) return qtyText({ ...add, v: p.v + add.v });
+  }
+  return `${old} + ${qtyText(add)}`;
+}
+function ingAmount([q, u], m, def) {
+  if (q == null) return null;
+  const v = q * m;
+  if (u === 'g') return { dim: 'g', v };
+  if (u === 'cs') return { dim: 'g', v: v * 15 };
+  if (u === 'cc') return { dim: 'g', v: v * 5 };
+  if (u === 'cl') return { dim: 'ml', v: v * 10 };
+  if (u === 'ml') return { dim: 'ml', v };
+  if (u === 'pc') return { dim: 'n', v: Math.ceil(v - 1e-6), lbl: def?.cnt || '' };
+  return null;
+}
+function shopUpsert(name, catHint, amount) {
+  const def = shopDefOf(name), n = shopNorm(name);
+  let it = def ? C.items.find(i => i.k === def.k) : null;
+  it ||= C.items.find(i => shopNorm(i.name) === n);
+  if (!it) {
+    it = def ? { id: 'd-' + def.k + '-' + uid(), k: def.k, name: def.name, cat: def.cat, qty: '', done: false }
+      : { id: uid(), name: name.charAt(0).toUpperCase() + name.slice(1), cat: catHint || shopGuessCat(name), qty: '', done: false };
+    if (!C.cats.some(c => c.id === it.cat)) it.cat = 'autre';
+    C.items.push(it);
+  }
+  // déjà dans le caddie lors d'une course précédente → on repart de zéro pour cette quantité
+  if (it.done) { it.done = false; it.qty = ''; }
+  if (amount) it.qty = mergeQty(it.qty, amount);
+  return it;
+}
+function addRecipeToShop(r, mult) {
+  const touched = new Set();
+  for (const ing of r.ing) {
+    const [q, u, rawName] = ing, base = rawName.split('|')[0];
+    if (q == null) {
+      // « Sel, poivre, muscade » → un article par épice
+      for (const part of base.split(/,|\+|\bou\b|\bet\b/).map(s => s.trim()).filter(Boolean)) {
+        const it = shopUpsert(part, shopDefOf(part) ? null : (SHOP_GUESS.find(([c, re]) => c === 'epicerie' && re.test(shopNorm(part))) ? 'epicerie' : shopGuessCat(part) === 'autre' ? 'epices' : null), null);
+        touched.add(it.id);
+      }
+      continue;
+    }
+    const def = shopDefOf(base);
+    touched.add(shopUpsert(base, null, ingAmount(ing, mult, def)).id);
+  }
+  shopSave(); renderShop();
+  return touched.size;
+}
+
+let recipeMode = 'recipes';
+function setRecipeMode(mode) {
+  recipeMode = mode === 'courses' ? 'courses' : 'recipes';
+  $$('#recipeSeg button').forEach(b => b.classList.toggle('active', b.dataset.rm === recipeMode));
+  $('#recipesPane').hidden = recipeMode !== 'recipes';
+  $('#coursesPane').hidden = recipeMode !== 'courses';
+  if ($('#view-recipes').classList.contains('active')) {
+    $('#datenav').style.visibility = recipeMode === 'courses' ? 'hidden' : 'visible';
+    history.replaceState(null, '', '#' + (recipeMode === 'courses' ? 'courses' : 'recipes'));
+  }
+  if (recipeMode === 'courses') renderShop(); else renderRecipes();
+}
+function catOptions(sel) {
+  return C.cats.map(c => `<option value="${esc(c.id)}"${c.id === sel ? ' selected' : ''}>${esc(c.e)} ${esc(c.name)}</option>`).join('') +
+    '<option value="__new">＋ Nouvelle catégorie…</option>';
+}
+function resolveCat(val, newName) {
+  if (val !== '__new') return C.cats.some(c => c.id === val) ? val : 'autre';
+  const name = String(newName || '').trim(); if (!name) return null;
+  const ex = C.cats.find(c => shopNorm(c.name) === shopNorm(name)); if (ex) return ex.id;
+  const cat = { id: 'c-' + uid(), e: '🏷️', name: name.charAt(0).toUpperCase() + name.slice(1) };
+  C.cats.splice(C.cats.findIndex(c => c.id === 'autre'), 0, cat);
+  return cat.id;
+}
+function renderShopBadge() {
+  const n = shopLeft(), b = $('#shopBadge');
+  b.textContent = C.items.length && !n ? '✓' : n; b.classList.toggle('done', !!C.items.length && !n);
+}
+let shopCatTouched = false;
+function renderShop() {
+  renderShopBadge();
+  const n = shopLeft(), done = C.items.length - n;
+  $('#shopSummary').textContent = C.items.length ? `${n} à acheter · ${done} dans le caddie` : 'liste vide';
+  const sel = $('#shopAddCat'), cur = sel.value;
+  sel.innerHTML = catOptions(cur && cur !== '__new' && C.cats.some(c => c.id === cur) ? cur : (cur === '__new' ? '' : 'autre'));
+  if (cur === '__new') sel.value = '__new';
+  $('#shopAddNewCat').hidden = sel.value !== '__new';
+  $('#shopClear').disabled = !done; $('#shopUncheck').disabled = !done;
+  const html = C.cats.map(c => {
+    const its = C.items.filter(i => i.cat === c.id); if (!its.length) return '';
+    const ord = its.filter(i => !i.done).concat(its.filter(i => i.done));
+    const left = its.filter(i => !i.done).length;
+    return `<div class="card shop-cat" data-cat="${esc(c.id)}"><div class="card-head"><h2>${esc(c.e)} ${esc(c.name)}</h2>
+      <span class="shop-count${left ? '' : ' ok'}">${left ? `${left} / ${its.length}` : '✓ tout pris'}</span></div>
+      <ul class="shop">${ord.map(i => `<li class="${i.done ? 'done' : ''}" data-item="${esc(i.id)}">
+        <button class="shop-check" data-toggle="${esc(i.id)}" role="checkbox" aria-checked="${i.done}" aria-label="${esc(i.name)}"><span class="box">${i.done ? '✓' : ''}</span>
+        <span class="shop-txt"><span class="shop-name">${esc(i.name)}</span>${i.qty ? `<span class="shop-qty">${esc(i.qty)}</span>` : ''}</span></button>
+        <button class="shop-edit" data-shopedit="${esc(i.id)}" aria-label="Modifier ${esc(i.name)}">✎</button></li>`).join('')}</ul></div>`;
+  }).join('');
+  $('#shopList').innerHTML = html || '<div class="card"><p class="hint center" style="margin:0">Ta liste est vide. Ajoute un article ou restaure la liste par défaut.</p></div>';
+}
+function openShopEditor(id) {
+  const it = C.items.find(i => i.id === id); if (!it) return;
+  openSheet(`<h3>Modifier l’article</h3>
+    <form id="shEdit" autocomplete="off">
+      <label>Article<input id="shName" value="${esc(it.name)}" required></label>
+      <label class="mt12">Quantité (optionnel)<input id="shQty" value="${esc(it.qty)}" placeholder="ex. 7 boîtes, 1,4 kg, 2 L"></label>
+      <label class="mt12">Catégorie<select id="shCat">${catOptions(it.cat)}</select></label>
+      <input id="shNewCat" class="mt8" placeholder="Nom de la nouvelle catégorie" hidden>
+      <button class="btn block mt12" type="submit">Enregistrer</button>
+    </form>
+    <div class="row mt8"><button class="btn ghost grow danger-text" id="shDel">🗑 Supprimer</button><button class="btn ghost grow" data-close>Annuler</button></div>`);
+  $('#shCat').onchange = () => { $('#shNewCat').hidden = $('#shCat').value !== '__new'; if (!$('#shNewCat').hidden) $('#shNewCat').focus(); };
+  $('#shEdit').onsubmit = e => {
+    e.preventDefault();
+    const name = $('#shName').value.trim(); if (!name) return toast('Donne un nom à l’article');
+    const cat = resolveCat($('#shCat').value, $('#shNewCat').value); if (!cat) return toast('Donne un nom à la nouvelle catégorie');
+    if (shopNorm(name) !== shopNorm(it.name)) { const d = shopDefOf(name); it.k = d && !C.items.some(x => x !== it && x.k === d.k) ? d.k : undefined; }
+    Object.assign(it, { name, qty: $('#shQty').value.trim(), cat });
+    shopSave(); closeSheet(); renderShop(); toast('Article modifié');
+  };
+  $('#shDel').onclick = () => {
+    if (!confirm(`Supprimer « ${it.name} » de la liste ?`)) return;
+    C.items = C.items.filter(i => i !== it); shopSave(); closeSheet(); renderShop(); toast('Article supprimé');
+  };
+}
+function bindShop() {
+  $('#recipeSeg').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (b) { setRecipeMode(b.dataset.rm); window.scrollTo(0, 0); } });
+  $('#shopList').addEventListener('click', e => {
+    const ed = e.target.closest('[data-shopedit]'); if (ed) return openShopEditor(ed.dataset.shopedit);
+    const t = e.target.closest('[data-toggle]'); if (!t) return;
+    const it = C.items.find(i => i.id === t.dataset.toggle); if (!it) return;
+    it.done = !it.done; shopSave(); renderShop();
+  });
+  $('#shopAddName').addEventListener('input', () => {
+    if (shopCatTouched) return;
+    const v = $('#shopAddName').value.trim(); if (!v) return;
+    const g = shopGuessCat(v); if (C.cats.some(c => c.id === g)) $('#shopAddCat').value = g;
+  });
+  $('#shopAddCat').onchange = () => {
+    shopCatTouched = true; $('#shopAddNewCat').hidden = $('#shopAddCat').value !== '__new';
+    if (!$('#shopAddNewCat').hidden) $('#shopAddNewCat').focus();
+  };
+  $('#shopAddForm').onsubmit = e => {
+    e.preventDefault();
+    const name = $('#shopAddName').value.trim(); if (!name) return toast('Écris le nom de l’article');
+    const cat = resolveCat($('#shopAddCat').value, $('#shopAddNewCat').value); if (!cat) return toast('Donne un nom à la nouvelle catégorie');
+    const qty = $('#shopAddQty').value.trim();
+    const ex = C.items.find(i => shopNorm(i.name) === shopNorm(name));
+    if (ex) {
+      ex.done = false; if (qty) ex.qty = ex.qty ? `${ex.qty} + ${qty}` : qty;
+      toast(`« ${ex.name} » était déjà dans la liste`);
+    } else {
+      C.items.push({ id: uid(), name: name.charAt(0).toUpperCase() + name.slice(1), cat, qty, done: false });
+      toast(`✓ ${name} ajouté à la liste`);
+    }
+    $('#shopAddName').value = ''; $('#shopAddQty').value = ''; $('#shopAddNewCat').value = ''; shopCatTouched = false;
+    $('#shopAddCat').value = 'autre'; $('#shopAddNewCat').hidden = true;
+    shopSave(); renderShop();
+  };
+  $('#shopUncheck').onclick = () => {
+    if (!confirm('Nouvelle course : décocher tous les articles ?')) return;
+    C.items.forEach(i => (i.done = false)); shopSave(); renderShop(); toast('Tout est décoché');
+  };
+  $('#shopClear').onclick = () => {
+    const n = C.items.filter(i => i.done).length; if (!n) return;
+    if (!confirm(`Supprimer de la liste les ${n} article${n > 1 ? 's' : ''} coché${n > 1 ? 's' : ''} ?`)) return;
+    C.items = C.items.filter(i => !i.done); shopSave(); renderShop(); toast('Articles cochés supprimés');
+  };
+  $('#shopRestore').onclick = () => {
+    if (!confirm('Restaurer la liste par défaut ? Tes articles perso, tes catégories et les quantités seront effacés.')) return;
+    C = shopFresh(); shopSave(); renderShop(); toast('Liste par défaut restaurée');
+  };
 }
 
 /* ---------- Rendu : Ajouter ---------- */
@@ -1074,7 +1380,7 @@ function renderSettings() {
   renderPresets(); renderAISettings();
 }
 function exportData() {
-  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ ...S, courses: C }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `coach-killian-sauvegarde-${todayKey()}.json`; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -1087,7 +1393,10 @@ function importData(file) {
       const d = JSON.parse(rd.result);
       if (!d || typeof d !== 'object' || !d.log || !d.goals) throw new Error('format');
       if (!confirm('Remplacer toutes les données actuelles par cette sauvegarde ?')) return;
-      S = migrate(d); save(); renderAll(); toast('Sauvegarde importée');
+      const { courses, ...rest } = d;
+      S = migrate(rest); save();
+      const c = shopSanitize(courses); if (c) { C = c; shopSave(); }
+      renderAll(); toast('Sauvegarde importée');
     } catch { toast('Fichier invalide'); }
   };
   rd.readAsText(file);
@@ -1107,16 +1416,16 @@ function closeSheet() {
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
-  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train' || view === 'recipes') ? 'visible' : 'hidden';
+  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train' || (view === 'recipes' && recipeMode === 'recipes')) ? 'visible' : 'hidden';
   if (view === 'train') renderTrain();
   if (view === 'progress') renderProgress();
   if (view === 'settings') renderSettings();
   if (view === 'add') renderPresets();
-  if (view === 'recipes') renderRecipes();
+  if (view === 'recipes') { if (recipeMode === 'courses') renderShop(); else renderRecipes(); }
   window.scrollTo(0, 0);
-  history.replaceState(null, '', '#' + view);
+  history.replaceState(null, '', '#' + (view === 'recipes' && recipeMode === 'courses' ? 'courses' : view));
 }
-function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderTrain(); renderProgress(); renderSettings(); }
+function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderShop(); renderTrain(); renderProgress(); renderSettings(); }
 
 /* ---------- Événements ---------- */
 function bind() {
@@ -1181,6 +1490,7 @@ function bind() {
   $('#photoInput').onchange = e => { onPhoto(e.target.files[0]); e.target.value = ''; };
   $('#photoGoAI').onclick = e => { e.preventDefault(); goAISettings(); };
   bindAISettings();
+  bindShop();
 
   $('#sessionSeg').addEventListener('click', e => {
     const b = e.target.closest('[data-s]'); if (!b || b.dataset.s === S.draft.type) return;
@@ -1229,8 +1539,8 @@ function bind() {
   $('#exportBtn').onclick = exportData;
   $('#importInput').onchange = e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   $('#resetBtn').onclick = () => {
-    if (!confirm('Effacer TOUTES les données (repas, séances, poids) ? Pense à exporter avant.')) return;
-    localStorage.removeItem(STORE_KEY); S = freshState(); save(); renderAll(); show('today'); toast('Données effacées');
+    if (!confirm('Effacer TOUTES les données (repas, séances, poids, liste de courses) ? Pense à exporter avant.')) return;
+    localStorage.removeItem(STORE_KEY); localStorage.removeItem(SHOP_KEY); S = freshState(); save(); C = shopFresh(); shopSave(); renderAll(); show('today'); toast('Données effacées');
   };
 
   $('#sheetBackdrop').addEventListener('click', e => { if (e.target.id === 'sheetBackdrop') closeSheet(); });
@@ -1240,8 +1550,8 @@ function bind() {
 /* ---------- Démarrage ---------- */
 bind();
 renderAll();
-{ const h = (location.hash || '').slice(1); show(['today', 'add', 'recipes', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
+{ const h = (location.hash || '').slice(1); if (h === 'courses') { recipeMode = 'courses'; setRecipeMode('courses'); } show(h === 'courses' ? 'recipes' : ['today', 'add', 'recipes', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; } }; // pour le débogage / les tests
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; } }; // pour le débogage / les tests

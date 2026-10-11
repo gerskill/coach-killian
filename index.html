@@ -109,6 +109,11 @@
 
   <!-- RECETTES -->
   <section class="view" id="view-recipes">
+    <div class="seg seg-wide" id="recipeSeg" role="tablist">
+      <button class="active" data-rm="recipes" role="tab">📖 Recettes</button>
+      <button data-rm="courses" role="tab">🛒 Courses <span class="shop-badge" id="shopBadge"></span></button>
+    </div>
+    <div id="recipesPane">
     <div class="card">
       <h2>Recettes</h2>
       <p class="hint">Tes plats, petits-déj et shakers avec les quantités. Choisis 3, 4 ou 7 portions pour le batch cooking.</p>
@@ -120,6 +125,28 @@
         <button class="chip" data-rc="shaker">Shakers</button>
       </div>
       <ul class="results" id="recipeList"></ul>
+    </div>
+    </div>
+    <div id="coursesPane" hidden>
+      <div class="card">
+        <div class="card-head"><h2>Liste de courses</h2><span class="muted shop-sum" id="shopSummary"></span></div>
+        <form id="shopAddForm" autocomplete="off">
+          <input id="shopAddName" placeholder="Ajouter un article… (ex. skyr)" enterkeyhint="done">
+          <div class="row mt8">
+            <input id="shopAddQty" class="shop-qty-in" placeholder="Qté (option.)">
+            <select id="shopAddCat" aria-label="Catégorie"></select>
+          </div>
+          <input id="shopAddNewCat" placeholder="Nom de la nouvelle catégorie" hidden>
+          <button class="btn block mt8" type="submit">＋ Ajouter à la liste</button>
+        </form>
+        <div class="row mt12">
+          <button class="btn ghost grow small" id="shopUncheck">↺ Décocher tout</button>
+          <button class="btn ghost grow small danger-text" id="shopClear">🗑 Supprimer les cochés</button>
+        </div>
+        <p class="hint" style="margin:0">Touche un article pour le cocher, ✎ pour changer la quantité, le renommer ou le supprimer. Dans une recette, « Ajouter les ingrédients à la liste » ajoute les quantités des portions choisies.</p>
+      </div>
+      <div id="shopList"></div>
+      <button class="btn ghost block" id="shopRestore">Restaurer la liste par défaut</button>
     </div>
   </section>
 
@@ -211,7 +238,7 @@
       </div>
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
-    <p class="hint center">Coach Killian · v3 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v6 · données stockées localement</p>
   </section>
 </main>
 

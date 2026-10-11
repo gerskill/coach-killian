@@ -208,3 +208,30 @@ label input{margin-top:4px;color:var(--text)}
 .ai-redo{margin:0 0 12px;font-size:.88rem}
 .ai-redo summary{cursor:pointer;color:var(--blue);margin-bottom:8px}
 a{color:#60a5fa}
+/* liste de courses */
+.seg-wide{margin-bottom:12px;padding:4px}
+.seg-wide button{flex:1;width:auto;height:40px;font-size:.95rem;display:flex;align-items:center;justify-content:center;gap:6px}
+.shop-badge{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--accent2);color:#fff;font-size:.75rem;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.shop-badge.done{background:var(--accent);color:#04210f}
+.seg-wide button.active .shop-badge{background:#04210f;color:#fff}
+.shop-sum{font-size:.8rem;text-align:right}
+#coursesPane[hidden],#recipesPane[hidden]{display:none}
+#shopAddNewCat{margin-top:8px}
+.shop-qty-in{flex:0 0 118px!important}
+#shopAddCat{flex:1;min-width:0}
+.shop-count{font-size:.8rem;color:var(--muted);font-weight:700;white-space:nowrap}
+.shop-count.ok{color:var(--accent)}
+.shop{list-style:none;margin:0;padding:0}
+.shop li{display:flex;align-items:center;border-top:1px solid var(--line)}
+.shop li:first-child{border-top:0}
+.shop-check{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:10px 0;min-height:50px;border:0;background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer}
+.shop-check .box{flex:0 0 26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.95rem;color:#04210f}
+.shop-txt{min-width:0;display:flex;flex-direction:column}
+.shop-name{font-weight:600;line-height:1.25}
+.shop-qty{font-size:.8rem;color:var(--accent);font-weight:700}
+.shop li.done .box{background:var(--accent);border-color:var(--accent)}
+.shop li.done .shop-txt{opacity:.45}
+.shop li.done .shop-name{text-decoration:line-through;font-weight:500}
+.shop li.done .shop-qty{color:var(--muted)}
+.shop-edit{flex:0 0 40px;height:40px;border-radius:10px;border:0;background:transparent;color:var(--muted);font-size:1.05rem;cursor:pointer}
+#coursesPane #shopRestore{margin-bottom:8px}
