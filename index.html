@@ -66,6 +66,7 @@
         <button class="chip" data-m="2">×2</button>
       </div>
       <div class="presets" id="presets"></div>
+      <p class="hint" style="margin:10px 0 0">📖 ou appui long sur un repas = voir sa recette.</p>
     </div>
 
     <div class="card">
@@ -101,6 +102,22 @@
     <div class="card">
       <h2>Saisie manuelle</h2>
       <button class="btn ghost block" id="manualBtn">✎ Entrer des macros à la main</button>
+    </div>
+  </section>
+
+  <!-- RECETTES -->
+  <section class="view" id="view-recipes">
+    <div class="card">
+      <h2>Recettes</h2>
+      <p class="hint">Tes plats, petits-déj et shakers avec les quantités. Choisis 3, 4 ou 7 portions pour le batch cooking.</p>
+      <input type="search" id="recipeFilter" placeholder="Chercher une recette ou un ingrédient…" autocomplete="off">
+      <div class="chips" id="recipeCats" style="margin-top:10px">
+        <button class="chip active" data-rc="all">Toutes</button>
+        <button class="chip" data-rc="plat">Plats</button>
+        <button class="chip" data-rc="petit-dej">Petit-déj</button>
+        <button class="chip" data-rc="shaker">Shakers</button>
+      </div>
+      <ul class="results" id="recipeList"></ul>
     </div>
   </section>
 
@@ -172,14 +189,15 @@
       </div>
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
-    <p class="hint center">Coach Killian · v1 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v2 · données stockées localement</p>
   </section>
 </main>
 
 <nav class="tabbar">
   <button class="tab active" data-view="today"><span class="ti">◉</span>Aujourd'hui</button>
   <button class="tab" data-view="add"><span class="ti">＋</span>Ajouter</button>
-  <button class="tab" data-view="train"><span class="ti">🏋</span>Entraînement</button>
+  <button class="tab" data-view="recipes"><span class="ti">📖</span>Recettes</button>
+  <button class="tab" data-view="train"><span class="ti">🏋</span>Séance</button>
   <button class="tab" data-view="progress"><span class="ti">📈</span>Progrès</button>
   <button class="tab" data-view="settings"><span class="ti">⚙</span>Réglages</button>
 </nav>

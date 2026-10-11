@@ -149,3 +149,23 @@ label input{margin-top:4px;color:var(--text)}
 #weightForm input[type=date]{flex:1 1 130px}
 #weightForm .btn{flex:1 1 100%}
 #weightSummary{font-size:.8rem;text-align:right}
+/* recettes */
+.tabbar{grid-template-columns:repeat(6,1fr)}
+.tab{font-size:.64rem;padding:0 1px;white-space:nowrap;overflow:hidden}
+#recipeList li{cursor:pointer}
+.r-emoji{font-size:1.5rem;width:34px;text-align:center;flex:0 0 34px}
+.sheet h4{margin:14px 0 6px;font-size:.95rem}
+.ing{list-style:none;margin:0;padding:0}
+.ing li{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:.92rem}
+.ing li:first-child{border-top:0}
+.ing .q{flex:0 0 92px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.ing .n small{display:block;color:var(--muted);font-size:.78rem}
+.steps{margin:0;padding-left:22px;font-size:.92rem}
+.steps li{margin-bottom:6px}
+.r-note,.r-keep{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:.86rem;margin:10px 0}
+.r-tip{margin-top:-6px}
+.r-close{margin-top:8px}
+.preset .rlink{position:absolute;right:6px;bottom:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:.85rem;background:var(--card);border:1px solid var(--line)}
+.preset{padding-bottom:12px}
+.preset span:not(.cat):not(.rlink){padding-right:30px;display:block}
+#recipeList .e-name{white-space:normal}

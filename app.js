@@ -23,8 +23,16 @@ const DEFAULT_PRESETS = [
     desc: '2 œufs, 100 g pain complet, miel, banane, jus d\u2019orange' },
   { id: 'on-banane-pb', e: '🍌', name: 'Overnight banane beurre de cacahuète', kcal: 600, p: 30, g: 80, l: 18, cat: 'petit-dej' },
   { id: 'on-chocolat', e: '🍫', name: 'Overnight chocolat', kcal: 550, p: 30, g: 80, l: 12, cat: 'petit-dej' },
-  { id: 'on-fruits-rouges', e: '🫐', name: 'Overnight fruits rouges', kcal: 500, p: 28, g: 68, l: 13, cat: 'petit-dej' }
+  { id: 'on-fruits-rouges', e: '🫐', name: 'Overnight fruits rouges', kcal: 500, p: 28, g: 68, l: 13, cat: 'petit-dej' },
+  { id: 'wraps-poulet', e: '🌯', name: 'Wraps poulet', kcal: 780, p: 45, g: 100, l: 22, cat: 'plat',
+    desc: '2 grandes tortillas, 110 g poulet, crème fraîche, 20 g emmental, crudités + 1 pomme' },
+  { id: 'tortilla-espagnole', e: '🥚', name: 'Tortilla espagnole', kcal: 780, p: 37, g: 86, l: 32, cat: 'plat',
+    desc: '3 œufs, 350 g pommes de terre, oignon, 20 g emmental, 1 tranche de pain' }
 ];
+// repas rapides ajoutés après la v1 : injectés une seule fois dans les données existantes
+const PRESETS_REV = 2;
+const PRESETS_ADDED = { 2: ['wraps-poulet', 'tortilla-espagnole'] };
+
 
 // aliments de base, pour 100 g (valeurs moyennes type table CIQUAL)
 const BASE_FOODS = [
@@ -64,10 +72,140 @@ const WORKOUTS = {
   ]
 };
 
+/* ---------- Recettes ----------
+ * Quantités pour 1 portion (poids cru), reprises du plan alimentaire / batch cooking.
+ * ing : [quantité, unité, nom (singulier|pluriel), note]  · unités : g, cl, ml, pc (pièce), cs, cc ; si quantité null, l'unité est le texte affiché (« au goût »)
+ * Les macros affichées viennent du repas rapide de même id (S.presets) pour rester cohérentes. */
+const RECIPES = [
+  { id: 'riz-poulet-curry', cat: 'plat', time: '30 min', ing: [
+      [120, 'g', 'Blanc de poulet'], [130, 'g', 'Riz (cru)'], [200, 'g', 'Légumes', 'surgelés OK : poêlée, haricots verts, brocolis'],
+      [5, 'cl', 'Lait de coco'], [5, 'g', 'Huile', '1 c. à c. par portion'], [1 / 3, 'pc', 'Oignon|Oignons'], [null, 'au goût', 'Curry', '≈ 1 c. à s. pour 3-4 portions']],
+    steps: ['Cuis le riz 12 min dans un grand volume d\u2019eau salée, égoutte et étale-le pour qu\u2019il refroidisse vite.',
+      'Fais dorer l\u2019oignon émincé et le poulet en dés dans l\u2019huile, 6-8 min.',
+      'Ajoute le curry, les légumes et le lait de coco, puis laisse mijoter 10 min à couvert.',
+      'Répartis le riz et le curry dans les boîtes.'],
+    keep: '3-4 jours au frigo. Le curry se congèle très bien (2 mois). Refroidis le riz vite et réchauffe-le bien chaud partout.' },
+  { id: 'pates-thon-tomate', cat: 'plat', time: '15 min', ing: [
+      [140, 'g', 'Pâtes (crues)'], [1, 'pc', 'Boîte de thon au naturel|Boîtes de thon au naturel', '≈ 90 g égoutté par boîte'],
+      [150, 'g', 'Sauce tomate'], [10, 'g', 'Huile d\u2019olive', '1 c. à s. par portion'], [null, 'au goût', 'Ail, herbes de Provence']],
+    steps: ['Cuis les pâtes 1 min de moins qu\u2019indiqué, égoutte et ajoute un filet d\u2019huile pour qu\u2019elles ne collent pas.',
+      'Chauffe la sauce tomate avec le reste de l\u2019huile, l\u2019ail et les herbes.',
+      'Hors du feu, ajoute le thon égoutté et mélange avec les pâtes.'],
+    keep: '3-4 jours au frigo. Ajoute 1 c. à s. d\u2019eau avant de réchauffer au micro-ondes pour que les pâtes ne sèchent pas.' },
+  { id: 'couscous-poulet', cat: 'plat', time: '35 min', name: 'Couscous poulet légumes sauce tomate', ing: [
+      [100, 'g', 'Blanc de poulet'], [130, 'g', 'Semoule (crue)'], [250, 'g', 'Légumes couscous', 'courgette, carotte, oignon (surgelés OK)'],
+      [100, 'g', 'Sauce tomate'], [10, 'g', 'Huile', '1 c. à s. par portion'], [null, 'au goût', 'Ras el hanout + bouillon de volaille', '1 c. à s. + ½ cube pour 3-4 portions']],
+    steps: ['Fais dorer le poulet en dés dans l\u2019huile (garde 1 c. à c. pour la semoule).',
+      'Ajoute les légumes, la sauce tomate, le ras el hanout, le bouillon et un peu d\u2019eau (≈ 5 cl par portion). Laisse mijoter 20 min.',
+      'Semoule : verse le même volume d\u2019eau bouillante salée avec 1 c. à c. d\u2019huile, couvre 5 min puis égrène à la fourchette.',
+      'Mets en boîtes : la semoule d\u2019un côté, la viande et les légumes de l\u2019autre.'],
+    keep: '3-4 jours au frigo, la sauce se congèle très bien. Réchauffe la semoule 1 min avec 1 c. à s. d\u2019eau, puis verse la sauce chaude dessus.' },
+  { id: 'chili', cat: 'plat', time: '40 min', ing: [
+      [100, 'g', 'Steak haché 5 %'], [60, 'g', 'Lentilles vertes sèches', '= 150 g cuites par portion'], [100, 'g', 'Riz (cru)'],
+      [100, 'g', 'Sauce tomate'], [1 / 3, 'pc', 'Oignon|Oignons'], [10, 'g', 'Huile', '1 c. à s. par portion'], [null, 'au goût', 'Cumin + paprika', '1 c. à c. de chaque pour 3 portions']],
+    steps: ['Rince les lentilles et cuis-les 20-25 min dans 3 fois leur volume d\u2019eau froide, sans sel (sale à la fin). Égoutte.',
+      'En même temps, cuis le riz 12 min, égoutte et étale-le pour qu\u2019il refroidisse vite.',
+      'Fais revenir l\u2019oignon dans l\u2019huile, ajoute le steak haché en l\u2019émiettant, puis le cumin et le paprika.',
+      'Ajoute la sauce tomate et les lentilles, laisse mijoter 10 min, puis mets en boîtes avec le riz.'],
+    keep: '3-4 jours au frigo, se congèle très bien, et c\u2019est encore meilleur le lendemain. Steak haché surgelé : décongèle-le au frigo la veille.' },
+  { id: 'poulet-pates-legumes', cat: 'plat', time: '25 min', ing: [
+      [110, 'g', 'Blanc de poulet'], [135, 'g', 'Pâtes (crues)'], [200, 'g', 'Légumes', 'poêlée, courgettes, brocolis'],
+      [10, 'g', 'Huile', '1 c. à s. par portion'], [null, 'au goût', 'Ail, paprika ou herbes', 'change chaque semaine']],
+    steps: ['Cuis les pâtes al dente et égoutte-les.',
+      'Fais dorer le poulet en dés dans l\u2019huile avec l\u2019ail et les épices.',
+      'Ajoute les légumes et fais cuire 8-10 min, puis mélange avec les pâtes.'],
+    keep: '3-4 jours au frigo. Ajoute 1 c. à s. d\u2019eau avant de réchauffer.' },
+  { id: 'hachis', cat: 'plat', time: '50 min', ing: [
+      [120, 'g', 'Steak haché 5 %'], [500, 'g', 'Pommes de terre'], [8, 'cl', 'Lait demi-écrémé', 'pour la purée'],
+      [10, 'g', 'Beurre'], [20, 'g', 'Emmental râpé'], [1 / 3, 'pc', 'Oignon|Oignons'], [null, 'au goût', 'Sel, poivre, muscade']],
+    steps: ['Épluche les pommes de terre, coupe-les en morceaux et mets-les dans l\u2019eau froide salée : 20-25 min après l\u2019ébullition.',
+      'Fais revenir l\u2019oignon, ajoute le steak haché en l\u2019émiettant, sale et poivre.',
+      'Écrase les pommes de terre avec le lait chaud et le beurre (une pincée de muscade si tu aimes).',
+      'Dans des boîtes qui passent au micro-ondes : la viande au fond, la purée dessus, puis l\u2019emmental.',
+      'Si tu veux, fais gratiner 10 min au four à 200 °C.'],
+    keep: '3-4 jours au frigo, se congèle parfaitement en portions (2 mois). Réchauffe 3-4 min au micro-ondes, couvercle entrouvert, jusqu\u2019à ce que ce soit bien chaud au centre.' },
+  { id: 'curry-coco', cat: 'plat', time: '40 min', ing: [
+      [120, 'g', 'Blanc de poulet'], [150, 'g', 'Patate douce', 'en dés de 1 cm'], [100, 'g', 'Riz (cru)'], [5, 'cl', 'Lait de coco'],
+      [100, 'g', 'Légumes', 'poivrons, haricots verts…'], [5, 'g', 'Huile', '1 c. à c. par portion'], [1 / 3, 'pc', 'Oignon|Oignons'], [null, 'au goût', 'Curry']],
+    steps: ['Cuis le riz 12 min, égoutte et étale-le pour qu\u2019il refroidisse vite.',
+      'Fais revenir l\u2019oignon et le poulet en dés dans l\u2019huile, puis ajoute le curry.',
+      'Ajoute la patate douce en petits dés, le lait de coco et un peu d\u2019eau (≈ 3 cl par portion). Laisse mijoter 20 min à couvert.',
+      'Quand la patate douce est fondante, écrase-la un peu à la fourchette pour épaissir la sauce : on ne sent plus sa texture.',
+      'Ajoute les légumes 5 min avant la fin, puis mets en boîtes avec le riz.'],
+    keep: '3-4 jours au frigo, le curry se congèle très bien. Si tu congèles, garde le riz à part, il se réchauffe mieux.' },
+  { id: 'poulet-riz-legumes', cat: 'plat', time: '25 min', ing: [
+      [120, 'g', 'Blanc de poulet'], [130, 'g', 'Riz (cru)'], [200, 'g', 'Légumes', 'poêlée, brocolis'],
+      [10, 'g', 'Huile', '1 c. à s. par portion'], [null, 'au goût', 'Paprika, herbes ou sauce soja']],
+    steps: ['Cuis le riz 12 min, égoutte et étale-le pour qu\u2019il refroidisse vite.',
+      'Fais dorer le poulet en lanières dans l\u2019huile avec les épices.',
+      'Ajoute les légumes et fais sauter 8 min, puis mets en boîtes avec le riz.'],
+    keep: '3-4 jours au frigo. Le riz doit être bien chaud partout au réchauffage.' },
+  { id: 'wraps-poulet', cat: 'plat', time: '15 min', ing: [
+      [2, 'pc', 'Grande tortilla de blé|Grandes tortillas de blé'], [110, 'g', 'Blanc de poulet'], [1, 'cs', 'Crème fraîche'],
+      [20, 'g', 'Emmental râpé'], [null, 'une poignée', 'Crudités', 'salade, tomate, carotte râpée'], [1, 'pc', 'Pomme|Pommes', 'en dessert'], [null, 'au goût', 'Paprika, sel, poivre']],
+    steps: ['Coupe le poulet en lanières et fais-le cuire 6-8 min dans une poêle antiadhésive avec le paprika, le sel et le poivre.',
+      'Chauffe les tortillas 20 s par face à la poêle (ou 15 s au micro-ondes).',
+      'Étale la crème fraîche, ajoute le poulet, l\u2019emmental et les crudités.',
+      'Replie les bords et roule bien serré. La pomme en dessert.'],
+    keep: 'À monter le jour même (10 min). Tu peux cuire le poulet à l\u2019avance (3 jours au frigo) et assembler au moment de manger pour que la tortilla ne ramollisse pas.' },
+  { id: 'tortilla-espagnole', cat: 'plat', time: '30 min', name: 'Tortilla espagnole (omelette pommes de terre)', ing: [
+      [3, 'pc', 'Œuf|Œufs'], [350, 'g', 'Pommes de terre'], [1 / 2, 'pc', 'Oignon|Oignons'], [10, 'g', 'Huile d\u2019olive', '1 c. à s. par portion'],
+      [20, 'g', 'Emmental râpé'], [1, 'pc', 'Tranche de pain|Tranches de pain'], [null, 'au goût', 'Sel, poivre']],
+    steps: ['Épluche les pommes de terre et coupe-les en fines tranches (3 mm).',
+      'Fais-les cuire avec l\u2019oignon émincé dans l\u2019huile, à feu moyen et à couvert, 15 min jusqu\u2019à ce qu\u2019elles soient tendres.',
+      'Bats les œufs avec le sel, le poivre et l\u2019emmental, puis ajoute les pommes de terre.',
+      'Reverse dans la poêle, 5 min à feu doux et à couvert. Retourne avec une assiette et cuis encore 3-4 min : elle doit être bien prise au centre.',
+      'Sers avec la tranche de pain.'],
+    keep: '2-3 jours au frigo. Se mange froide ou tiède, pratique à emporter.' },
+  { id: 'shaker', cat: 'shaker', time: '2 min', ing: [
+      [30, 'cl', 'Lait demi-écrémé'], [1, 'pc', 'Banane|Bananes'], [30, 'g', 'Beurre de cacahuète'], [150, 'g', 'Fromage blanc 3 %'], [1, 'cs', 'Miel']],
+    steps: ['Mets tout dans le mixeur.', 'Mixe 30 secondes et bois tout de suite.'],
+    keep: 'À boire de préférence tout de suite, ou 24 h maximum au frigo dans une bouteille fermée (secoue avant).',
+    note: 'Si tu prends de la créatine, ajoute tes 3-5 g dans un des shakers de la journée.' },
+  { id: 'crepes', cat: 'petit-dej', time: '25 min', name: 'Crêpes protéinées', unit: 'recette entière (6 crêpes ou 15-18 petites)', ing: [
+      [2, 'pc', 'Œuf|Œufs'], [200, 'g', 'Fromage blanc 3 %'], [80, 'g', 'Farine'], [150, 'ml', 'Lait'], [1, 'cc', 'Miel'], [null, '1 pincée', 'Sel']],
+    steps: ['Mixe tous les ingrédients jusqu\u2019à obtenir une pâte lisse.', 'Laisse reposer 10 min.',
+      'Fais chauffer une poêle légèrement huilée, verse une petite louche de pâte et cuis environ 1 min par face.'],
+    keep: '3 jours au frigo, filmées ou en boîte. Réchauffe 20 s au micro-ondes.',
+    note: 'Machine crêpe party : 15-18 petites crêpes avec la même pâte. 1 c. à s. de pâte par emplacement, environ 1 min par face (quand des bulles apparaissent). Huile la plaque avant la 1re fournée, et ajoute 2-3 c. à s. de lait si la pâte s\u2019étale mal. Mange la moitié au petit-déj et l\u2019autre moitié en collation, ou garde-la pour le lendemain. Avec beurre de cacahuète + banane dessus : ≈ +300 kcal.' },
+  { id: 'omelette', cat: 'petit-dej', time: '10 min', ing: [
+      [2, 'pc', 'Œuf|Œufs', 'en omelette, ou à la coque'], [5, 'g', 'Beurre'], [100, 'g', 'Pain complet', '≈ 3 tranches par portion'],
+      [15, 'g', 'Miel'], [1, 'pc', 'Banane|Bananes'], [25, 'cl', 'Jus d\u2019orange']],
+    steps: ['Bats les œufs avec une pincée de sel.',
+      'Fais fondre le beurre dans une poêle à feu moyen, verse les œufs et cuis 2-3 min en ramenant les bords vers le centre, jusqu\u2019à ce que l\u2019omelette soit prise.',
+      'Toaste le pain et tartine-le de miel. Avec la banane et le verre de jus d\u2019orange.'],
+    keep: 'À préparer minute. Le pain complet se congèle en tranches et passe directement au grille-pain.' },
+  { id: 'on-banane-pb', cat: 'petit-dej', time: '5 min + 1 nuit', unit: 'bocal', ing: [
+      [60, 'g', 'Flocons d\u2019avoine fins', 'ou mixés en poudre pour ne plus sentir la texture'], [200, 'ml', 'Lait'], [150, 'g', 'Yaourt grec'],
+      [1, 'pc', 'Banane écrasée|Bananes écrasées'], [1, 'cs', 'Beurre de cacahuète'], [1, 'cc', 'Miel']],
+    steps: ['Écrase la banane au fond d\u2019un bocal.', 'Ajoute tous les autres ingrédients et mélange bien.',
+      'Ferme et laisse au frigo toute la nuit (6 h minimum).', 'Le matin, mélange et ajoute un peu de lait si c\u2019est trop épais.'],
+    keep: '2 jours maximum au frigo, bocal fermé.', oats: true },
+  { id: 'on-chocolat', cat: 'petit-dej', time: '5 min + 1 nuit', unit: 'bocal', ing: [
+      [60, 'g', 'Flocons d\u2019avoine fins', 'ou mixés en poudre'], [200, 'ml', 'Lait'], [150, 'g', 'Fromage blanc'],
+      [1, 'cs', 'Cacao non sucré'], [1, 'cs', 'Miel'], [1 / 2, 'pc', 'Banane|Bananes']],
+    steps: ['Mélange le lait, le cacao et le miel dans un bocal jusqu\u2019à ce qu\u2019il n\u2019y ait plus de grumeaux.',
+      'Ajoute les flocons, le fromage blanc et la banane en rondelles, puis mélange.',
+      'Ferme et laisse au frigo toute la nuit (6 h minimum).'],
+    keep: '2 jours maximum au frigo, bocal fermé.', oats: true },
+  { id: 'on-fruits-rouges', cat: 'petit-dej', time: '5 min + 1 nuit', unit: 'bocal', ing: [
+      [60, 'g', 'Flocons d\u2019avoine fins', 'ou mixés en poudre'], [200, 'ml', 'Lait'], [150, 'g', 'Yaourt grec'],
+      [100, 'g', 'Fruits rouges surgelés'], [1, 'cs', 'Graines de chia'], [1, 'cc', 'Miel']],
+    steps: ['Mélange les flocons, le lait, le yaourt grec, les graines de chia et le miel dans un bocal.',
+      'Ajoute les fruits rouges encore surgelés par-dessus : ils décongèlent pendant la nuit.',
+      'Ferme et laisse au frigo toute la nuit (6 h minimum), puis mélange le matin.'],
+    keep: '2 jours maximum au frigo, bocal fermé.', oats: true }
+];
+const RECIPE_CATS = { plat: 'Plats', 'petit-dej': 'Petit-déj', shaker: 'Shakers' };
+const RECIPE_PORTIONS = [1, 3, 4, 7];
+const SANS_AVOINE = 'Version sans avoine : remplace les 60 g de flocons par 2 tranches de pain complet émiettées ou 60 g de semoule fine. Ça fait un pudding de nuit avec la même texture.';
+const recipeById = id => RECIPES.find(r => r.id === id);
+
 /* ---------- État & stockage ---------- */
 function freshState() {
   return {
     version: 1,
+    presetsRev: PRESETS_REV,
     goals: { ...DEFAULT_GOALS },
     profile: { startW: 64, goalW: 75 },
     presets: DEFAULT_PRESETS.map(p => ({ ...p })),
@@ -85,8 +223,19 @@ function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return freshState();
-    return Object.assign(freshState(), JSON.parse(raw));
+    return migrate(JSON.parse(raw));
   } catch (e) { console.warn('load', e); return freshState(); }
+}
+function migrate(d) {
+  const st = Object.assign(freshState(), d);
+  const rev = +d.presetsRev || 1;
+  for (let v = rev + 1; v <= PRESETS_REV; v++) {
+    for (const id of PRESETS_ADDED[v] || []) {
+      if (!st.presets.some(p => p.id === id)) st.presets.push({ ...DEFAULT_PRESETS.find(p => p.id === id) });
+    }
+  }
+  st.presetsRev = PRESETS_REV;
+  return st;
 }
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
@@ -198,6 +347,73 @@ function renderWeekChart(sel, endKey) {
   $(sel).innerHTML = s + '</svg>';
 }
 
+/* ---------- Rendu : Recettes ---------- */
+let recipeCat = 'all';
+function recipeMacros(r) {
+  const p = S.presets.find(x => x.id === r.id) || DEFAULT_PRESETS.find(x => x.id === r.id);
+  return p ? { e: p.e, name: r.name || p.name, kcal: p.kcal, p: p.p, g: p.g, l: p.l } : { e: '🍽️', name: r.name || r.id, kcal: 0, p: 0, g: 0, l: 0 };
+}
+const nb = n => String(n).replace('.', ',');
+function fmtCount(q) {
+  const i = Math.floor(q + 1e-6), f = q - i;
+  const fr = [[0, ''], [1 / 3, '⅓'], [1 / 2, '½'], [2 / 3, '⅔'], [1, '']].reduce((a, b) => (Math.abs(b[0] - f) < Math.abs(a[0] - f) ? b : a));
+  const whole = fr[0] === 1 ? i + 1 : i;
+  if (Math.abs(fr[0] - f) > 0.09) return '≈ ' + nb(Math.round(q * 10) / 10);
+  return whole && fr[1] ? `${whole} ${fr[1]}` : fr[1] || String(whole);
+}
+function fmtQty(q, u, m) {
+  if (q == null) return '';
+  const v = q * m;
+  if (u === 'g') return v >= 1000 ? `${nb(Math.round(v / 10) / 100)} kg` : `${r0(v)} g`;
+  if (u === 'cl') return v >= 100 ? `${nb(Math.round(v) / 100)} L` : `${nb(r1(v))} cl`;
+  if (u === 'ml') return v >= 1000 ? `${nb(Math.round(v / 10) / 100)} L` : `${r0(v)} ml`;
+  if (u === 'cs') return `${fmtCount(v)} c. à s.`;
+  if (u === 'cc') return `${fmtCount(v)} c. à c.`;
+  return fmtCount(v);
+}
+function ingName(name, q, u, m) {
+  const [one, many] = name.split('|');
+  return u === 'pc' && many && q * m > 1.01 ? many : one;
+}
+function renderRecipes() {
+  const q = norm($('#recipeFilter').value.trim());
+  $$('#recipeCats .chip').forEach(c => c.classList.toggle('active', c.dataset.rc === recipeCat));
+  const list = RECIPES.filter(r => (recipeCat === 'all' || r.cat === recipeCat) &&
+    (!q || norm(recipeMacros(r).name + ' ' + r.ing.map(i => i[2]).join(' ')).includes(q)));
+  $('#recipeList').innerHTML = list.length ? list.map(r => {
+    const m = recipeMacros(r);
+    return `<li data-recipe="${r.id}"><span class="r-emoji">${esc(m.e || '🍽️')}</span>
+      <div class="e-main"><div class="e-name">${esc(m.name)}</div>
+      <div class="e-sub">${esc(RECIPE_CATS[r.cat])} · ⏱ ${esc(r.time)} · ${r0(m.p)} g prot.</div></div>
+      <div class="e-kcal">${fmt(m.kcal)} kcal</div></li>`;
+  }).join('') : '<li class="empty">Aucune recette trouvée.</li>';
+}
+function openRecipe(id, mult = 1) {
+  const r = recipeById(id); if (!r) return;
+  const m = recipeMacros(r), unit = r.unit || 'portion';
+  const unitN = n => (n > 1 ? (unit === 'bocal' ? 'bocaux' : unit === 'portion' ? 'portions' : 'fois la recette') : unit === 'portion' || unit === 'bocal' ? unit : 'recette');
+  const isToday = curDate === todayKey();
+  openSheet(`
+    <h3>${esc(m.e || '')} ${esc(m.name)}</h3>
+    <p class="hint">⏱ ${esc(r.time)} · valeurs pour 1 ${esc(unit)}</p>
+    <div class="macro-line"><span class="pill"><b>${fmt(m.kcal)}</b> kcal</span><span class="pill">P ${r0(m.p)} g</span><span class="pill">G ${r0(m.g)} g</span><span class="pill">L ${r0(m.l)} g</span></div>
+    <div class="chips" id="rPortions"><span class="chips-label">${unit === 'bocal' ? 'Bocaux' : unit === 'portion' ? 'Portions' : 'Recettes'}</span>
+      ${RECIPE_PORTIONS.map(n => `<button class="chip ${n === mult ? 'active' : ''}" data-rp="${n}">${n}</button>`).join('')}</div>
+    ${r.cat === 'plat' ? '<p class="hint r-tip">Batch cooking : 3 = session du dimanche, 4 = mercredi soir, 7 = toute la semaine.</p>' : ''}
+    <h4>Ingrédients <small class="muted">· ${mult} ${esc(unitN(mult))}${mult > 1 ? ` · ${fmt(m.kcal * mult)} kcal au total` : ''}</small></h4>
+    <ul class="ing">${r.ing.map(([q, u, name, note]) => `<li><span class="q">${esc(q == null ? u : fmtQty(q, u, mult))}</span>
+      <span class="n">${esc(ingName(name, q, u, mult))}${note ? `<small>${esc(note)}</small>` : ''}</span></li>`).join('')}</ul>
+    <h4>Étapes</h4>
+    <ol class="steps">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+    ${r.note ? `<p class="r-note">💡 ${esc(r.note)}</p>` : ''}
+    ${r.oats ? `<p class="r-note">🔄 ${esc(SANS_AVOINE)}</p>` : ''}
+    <p class="r-keep">🧊 <b>Conservation :</b> ${esc(r.keep)}</p>
+    <button class="btn block" id="rAdd">＋ Ajouter ${isToday ? 'à aujourd\u2019hui' : 'au ' + esc(parseKey(curDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} (1 ${esc(unit === 'portion' || unit === 'bocal' ? unit : 'recette')})</button>
+    <button class="btn ghost block r-close" data-close>Fermer</button>`);
+  $('#rPortions').onclick = e => { const b = e.target.closest('[data-rp]'); if (b) { const top = $('.sheet').scrollTop; openRecipe(id, +b.dataset.rp); $('.sheet').scrollTop = top; } };
+  $('#rAdd').onclick = () => { addEntry({ name: m.name, kcal: m.kcal, p: m.p, g: m.g, l: m.l }, '1 ' + (unit === 'portion' || unit === 'bocal' ? unit : 'recette')); closeSheet(); };
+}
+
 /* ---------- Rendu : Ajouter ---------- */
 function renderPresets() {
   $('#presets').innerHTML = S.presets.map(p => {
@@ -205,7 +421,8 @@ function renderPresets() {
     return `<button class="preset" data-preset="${p.id}" title="${esc(p.desc || '')}">
       <span class="cat">${esc(p.e || '🍽️')}</span>
       <b>${esc(p.name)}</b>
-      <span>${fmt(p.kcal * m)} kcal · ${r0(p.p * m)} g prot.</span></button>`;
+      <span>${fmt(p.kcal * m)} kcal · ${r0(p.p * m)} g prot.</span>
+      ${recipeById(p.id) ? `<span class="rlink" data-recipe="${p.id}" role="button" aria-label="Voir la recette">📖</span>` : ''}</button>`;
   }).join('');
   $('#presetAdmin').innerHTML = S.presets.map(p => `
     <li><div class="e-main"><div class="e-name">${esc(p.e || '')} ${esc(p.name)}</div>
@@ -546,7 +763,7 @@ function importData(file) {
       const d = JSON.parse(rd.result);
       if (!d || typeof d !== 'object' || !d.log || !d.goals) throw new Error('format');
       if (!confirm('Remplacer toutes les données actuelles par cette sauvegarde ?')) return;
-      S = Object.assign(freshState(), d); save(); renderAll(); toast('Sauvegarde importée');
+      S = migrate(d); save(); renderAll(); toast('Sauvegarde importée');
     } catch { toast('Fichier invalide'); }
   };
   rd.readAsText(file);
@@ -566,15 +783,16 @@ function closeSheet() {
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
-  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train') ? 'visible' : 'hidden';
+  $('#datenav').style.visibility = (view === 'today' || view === 'add' || view === 'train' || view === 'recipes') ? 'visible' : 'hidden';
   if (view === 'train') renderTrain();
   if (view === 'progress') renderProgress();
   if (view === 'settings') renderSettings();
   if (view === 'add') renderPresets();
+  if (view === 'recipes') renderRecipes();
   window.scrollTo(0, 0);
   history.replaceState(null, '', '#' + view);
 }
-function renderAll() { renderToday(); renderPresets(); renderBase(); renderTrain(); renderProgress(); renderSettings(); }
+function renderAll() { renderToday(); renderPresets(); renderBase(); renderRecipes(); renderTrain(); renderProgress(); renderSettings(); }
 
 /* ---------- Événements ---------- */
 function bind() {
@@ -600,15 +818,31 @@ function bind() {
     portion = +c.dataset.m; $$('#portionChips .chip').forEach(x => x.classList.toggle('active', x === c)); renderPresets();
   });
   $('#presets').addEventListener('click', e => {
+    const rl = e.target.closest('[data-recipe]'); if (rl) { e.stopPropagation(); openRecipe(rl.dataset.recipe); return; }
     const b = e.target.closest('[data-preset]'); if (!b) return;
     const p = S.presets.find(x => x.id === b.dataset.preset);
     addEntry(scaled(p, portion), portionLabel(portion));
   });
+  // appui long sur un repas rapide = ouvrir sa recette
+  let lpTimer = null, lpFired = false;
+  $('#presets').addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-preset]'); lpFired = false; if (!b || !recipeById(b.dataset.preset)) return;
+    lpTimer = setTimeout(() => { lpFired = true; openRecipe(b.dataset.preset); }, 550);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach(t => $('#presets').addEventListener(t, e => {
+    if (t === 'pointermove' && Math.abs(e.movementX) + Math.abs(e.movementY) < 4) return;
+    clearTimeout(lpTimer);
+  }));
+  $('#presets').addEventListener('click', e => { if (lpFired) { e.stopImmediatePropagation(); lpFired = false; } }, true);
+  $('#presets').addEventListener('contextmenu', e => { if (e.target.closest('[data-preset]')) e.preventDefault(); });
+  $('#recipeFilter').addEventListener('input', renderRecipes);
+  $('#recipeCats').addEventListener('click', e => { const c = e.target.closest('[data-rc]'); if (c) { recipeCat = c.dataset.rc; renderRecipes(); } });
+  $('#recipeList').addEventListener('click', e => { const li = e.target.closest('[data-recipe]'); if (li) openRecipe(li.dataset.recipe); });
   $('#newPresetBtn').onclick = () => openPresetEditor(null);
   $('#newPresetBtn2').onclick = () => openPresetEditor(null);
   $('#presetAdmin').addEventListener('click', e => { const b = e.target.closest('[data-edit]'); if (b) openPresetEditor(b.dataset.edit); });
   $('#restorePresets').onclick = () => {
-    if (!confirm('Remettre les 14 repas par défaut (tes repas perso sont gardés) ?')) return;
+    if (!confirm(`Remettre les ${DEFAULT_PRESETS.length} repas par défaut (tes repas perso sont gardés) ?`)) return;
     const custom = S.presets.filter(p => p.id.startsWith('u-'));
     S.presets = DEFAULT_PRESETS.map(p => ({ ...p })).concat(custom); save(); renderPresets(); toast('Repas restaurés');
   };
@@ -680,7 +914,7 @@ function bind() {
 /* ---------- Démarrage ---------- */
 bind();
 renderAll();
-{ const h = (location.hash || '').slice(1); show(['today', 'add', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
+{ const h = (location.hash || '').slice(1); show(['today', 'add', 'recipes', 'train', 'progress', 'settings'].includes(h) ? h : 'today'); }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
