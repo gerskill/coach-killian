@@ -71,9 +71,11 @@
 
     <div class="card">
       <h2>Photo du repas</h2>
-      <p class="hint">Prends ton assiette en photo pour ton journal. <span class="badge">Analyse automatique bientôt</span></p>
-      <label class="btn block" for="photoInput">📷 Photo</label>
+      <p class="hint" id="photoHint">Prends ton assiette en photo : Claude reconnaît les aliments et estime les grammes et les macros. Tu peux tout corriger avant d'ajouter.</p>
+      <input id="photoPrecision" placeholder="Précision (optionnel) : ex. il y a 150 g de riz" autocomplete="off">
+      <label class="btn block mt8" for="photoInput">📷 Photo</label>
       <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+      <p class="hint" id="photoNoKey" style="margin:10px 0 0">Sans clé, la photo est gardée dans ton journal sans analyse. <a href="#settings" id="photoGoAI">Ajouter ma clé Claude</a></p>
     </div>
 
     <div class="card">
@@ -179,6 +181,26 @@
       <ul class="entries" id="presetAdmin"></ul>
       <button class="btn ghost block" id="restorePresets">Restaurer les repas par défaut</button>
     </div>
+    <div class="card" id="aiCard">
+      <h2>Analyse photo (IA)</h2>
+      <p class="hint">Colle ici ta clé API Claude (console.anthropic.com → API Keys). Elle reste <b>uniquement sur ce téléphone</b>, n'est pas incluse dans l'export et n'est envoyée qu'à api.anthropic.com.</p>
+      <p class="ai-status" id="aiKeyStatus"></p>
+      <form id="aiKeyForm" autocomplete="off">
+        <label>Clé API Claude
+          <span class="key-row"><input type="password" id="aiKeyInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk-ant-…">
+          <button type="button" class="icon-btn" id="aiKeyToggle" aria-label="Afficher la clé">👁</button></span></label>
+        <button class="btn block mt8" type="submit">Enregistrer la clé</button>
+      </form>
+      <div class="row mt8">
+        <button class="btn ghost grow" id="aiTestKey">Tester la clé</button>
+        <button class="btn ghost grow danger-text" id="aiDelKey">Supprimer la clé</button>
+      </div>
+      <div class="ai-error" id="aiTestResult" role="alert" hidden></div>
+      <label class="mt12">Modèle<select id="aiModel"></select></label>
+      <p class="hint" id="aiCost"></p>
+      <p class="ai-count" id="aiCount"></p>
+      <p class="hint" style="margin:0"><a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Voir mon crédit Anthropic ↗</a></p>
+    </div>
     <div class="card">
       <h2>Sauvegarde</h2>
       <p class="hint">Tes données restent sur ce téléphone. Exporte-les de temps en temps.</p>
@@ -189,7 +211,7 @@
       </div>
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
-    <p class="hint center">Coach Killian · v2 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v3 · données stockées localement</p>
   </section>
 </main>
 

@@ -212,7 +212,8 @@ function freshState() {
     log: {},          // { 'AAAA-MM-JJ': [entrée] }
     workouts: [],     // [{ id, date, type, ex:[{name, sets:[{w,r}]}] }]
     weights: [],      // [{ date, kg }]
-    draft: null
+    draft: null,
+    ai: {}            // { model, usage:{month, n, usd} } – la clé API est stockée à part
   };
 }
 let S = load();
@@ -555,38 +556,311 @@ function stopScan() {
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
 }
 
-/* ---------- Photo ---------- */
-/**
- * Point d'entrée pour l'analyse IA de la photo (à brancher plus tard).
- * Reçoit une image (dataURL JPEG) et doit renvoyer une promesse de :
- *   { name: string, kcal: number, p: number, g: number, l: number, items?: [{name, grams}] }
- * ou null si l'analyse n'est pas disponible.
- * Ex. futur : appel à une API de vision avec la clé stockée dans S.settings.visionKey.
- */
-async function analyzePhoto(dataUrl) { // eslint-disable-line no-unused-vars
-  return null; // analyse automatique bientôt
+/* ---------- Photo + analyse IA (Claude) ---------- */
+/* La clé API n'est JAMAIS dans le code : Killian la colle dans Réglages, elle reste dans
+ * le localStorage de son téléphone (clé séparée, hors sauvegarde exportée) et n'est envoyée
+ * qu'à api.anthropic.com. */
+const AI_KEY_STORE = 'coachKillian.anthropicKey';
+const AI_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+// modèles Claude actuels (docs.claude.com, oct. 2026) ; prix $/million de tokens [entrée, sortie]
+const AI_MODELS = [
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5 · rapide, économique', price: [0.10, 0.50], cost: 'Moins de 0,1 centime par photo' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5 · plus précis', price: [2, 10], cost: 'Environ 1 centime par photo' }
+];
+const AI_DEFAULT_MODEL = AI_MODELS[0].id;
+const aiModel = () => AI_MODELS.find(m => m.id === S.ai?.model) || AI_MODELS[0];
+function getApiKey() { try { return localStorage.getItem(AI_KEY_STORE) || ''; } catch { return ''; } }
+function setApiKey(k) { if (k) localStorage.setItem(AI_KEY_STORE, k); else localStorage.removeItem(AI_KEY_STORE); }
+const maskKey = k => (k ? `${k.slice(0, 7)}••••••••${k.slice(-4)}` : '');
+const monthKey = () => todayKey().slice(0, 7);
+function aiUsage() {
+  S.ai ||= { model: AI_DEFAULT_MODEL };
+  if (!S.ai.usage || S.ai.usage.month !== monthKey()) S.ai.usage = { month: monthKey(), n: 0, usd: 0 };
+  return S.ai.usage;
 }
+function countAnalysis(usage, model) {
+  const u = aiUsage(); u.n++;
+  if (usage) {
+    const m = AI_MODELS.find(x => x.id === model) || aiModel();
+    const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+    u.usd = Math.round((u.usd + (inTok * m.price[0] + (usage.output_tokens || 0) * m.price[1]) / 1e6) * 1e5) / 1e5;
+  }
+  save();
+}
+
+class AIError extends Error {
+  constructor(kind, msg, retry) { super(msg); this.kind = kind; this.retry = !!retry; }
+}
+
+function aiPrompt(precision) {
+  const plats = S.presets.map(p => `- ${p.name} : ${r0(p.kcal)} kcal, P ${r0(p.p)} g, G ${r0(p.g)} g, L ${r0(p.l)} g par portion${p.desc ? ` (${p.desc})` : ''}`).join('\n');
+  return `Tu es un nutritionniste français. Analyse la photo de ce repas.
+1. Identifie chaque aliment visible dans l'assiette, le bol, le verre ou la boîte.
+2. Estime le poids en grammes de chaque aliment TEL QU'IL EST DANS L'ASSIETTE (riz, pâtes, semoule, légumes = poids CUIT ; viande = poids cuit ; boissons en ml ≈ g).
+3. Calcule pour chaque aliment kcal, protéines, glucides et lipides (g), avec des valeurs type table CIQUAL. Compte l'huile ou la matière grasse de cuisson probable (environ 5 à 10 g par plat poêlé ou en sauce).
+
+Repères de portions françaises : assiette plate ≈ 26 cm de diamètre ; portion de riz ou de pâtes cuits ≈ 200 à 300 g ; blanc de poulet ≈ 120 à 150 g ; steak haché ≈ 100 à 125 g ; tranche de pain ≈ 30 à 40 g ; œuf ≈ 55 g sans coquille ; c. à soupe d'huile ≈ 10 g ; boîte de batch cooking ≈ 450 à 550 g.
+
+Voici les plats habituels de l'utilisateur (il fait du batch cooking, ses boîtes ressemblent souvent à ça). Si le repas correspond à l'un d'eux, utilise son nom dans "plat" et inspire-toi de ses valeurs, ajustées à la quantité visible :
+${plats}
+${precision ? `\nPrécision donnée par l'utilisateur (prioritaire sur ton estimation visuelle) : « ${precision} »\n` : ''}
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni bloc de code, au format exact :
+{"plat":"nom court du repas","aliments":[{"nom":"","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0}],"total":{"grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0},"confiance":"faible|moyenne|haute","remarque":""}
+Les nombres sont des nombres JSON (pas de texte, pas d'unité). "remarque" : une phrase courte en français (ce qui est incertain, ou un conseil pour mieux estimer). Si la photo ne montre pas de nourriture, renvoie "aliments": [] et explique-le dans "remarque".`;
+}
+
+function buildAIRequest(b64, precision, model, withEffort = true) {
+  const body = {
+    model: model || aiModel().id,
+    max_tokens: 3000,
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+      { type: 'text', text: aiPrompt(precision) }
+    ] }]
+  };
+  if (withEffort) body.output_config = { effort: 'low' }; // moins de réflexion = moins cher et plus rapide
+  return body;
+}
+async function callClaude(body, key) {
+  if (navigator.onLine === false) throw new AIError('offline', 'Pas de connexion internet. L\u2019analyse a besoin du réseau : réessaie quand tu as du réseau, ou enregistre la photo sans analyse.', true);
+  let res;
+  try {
+    res = await fetch(AI_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    throw new AIError('offline', 'Impossible de joindre Claude (réseau coupé ou instable). Vérifie ta connexion puis réessaie.', true);
+  }
+  let data = null;
+  try { data = await res.json(); } catch { /* corps vide */ }
+  if (res.ok) return data;
+  const type = data?.error?.type || '', msg = String(data?.error?.message || '');
+  if (/credit balance|billing|crédit/i.test(msg)) throw new AIError('credit', 'Ton crédit Anthropic est épuisé. Ajoute des crédits sur console.anthropic.com (Settings → Billing), puis réessaie.');
+  if (res.status === 401 || type === 'authentication_error') throw new AIError('auth', 'Clé API invalide ou supprimée. Vérifie-la (ou crée-en une nouvelle sur console.anthropic.com) et colle-la dans Réglages.');
+  if (res.status === 403 || type === 'permission_error') throw new AIError('auth', 'Cette clé n\u2019a pas le droit d\u2019utiliser ce modèle. Vérifie ta clé ou choisis l\u2019autre modèle dans Réglages.');
+  if (res.status === 429 || type === 'rate_limit_error') throw new AIError('busy', 'Trop de demandes d\u2019un coup. Attends une minute puis réessaie.', true);
+  if (res.status === 529 || res.status === 503 || type === 'overloaded_error') throw new AIError('busy', 'Claude est surchargé en ce moment. Réessaie dans quelques instants.', true);
+  if (res.status === 404 || type === 'not_found_error') throw new AIError('model', `Modèle introuvable (${body.model}). Choisis l\u2019autre modèle dans Réglages.`);
+  if (res.status === 413) throw new AIError('size', 'Photo trop lourde. Réessaie avec une autre photo.');
+  if (res.status >= 500) throw new AIError('busy', 'Erreur temporaire chez Anthropic. Réessaie dans quelques instants.', true);
+  const err = new AIError('request', `Requête refusée (${res.status}) : ${msg || type || 'erreur inconnue'}`);
+  err.status = res.status; err.apiMsg = msg;
+  throw err;
+}
+
+/* Extrait le JSON d'une réponse texte (tolère ```json, texte autour, virgules finales) */
+function extractJSON(text) {
+  let t = String(text || '').replace(/```(?:json)?/gi, '').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new AIError('parse', 'Claude n\u2019a pas renvoyé de résultat lisible. Réessaie (ou ajoute une précision).', true);
+  t = t.slice(a, b + 1);
+  try { return JSON.parse(t); } catch { /* on tente une réparation */ }
+  try { return JSON.parse(t.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"')); }
+  catch { throw new AIError('parse', 'Réponse de Claude mal formée. Réessaie.', true); }
+}
+const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0; };
+function normalizeAI(j) {
+  const items = (Array.isArray(j?.aliments) ? j.aliments : []).map(a => {
+    const it = { nom: String(a.nom || a.name || 'Aliment').slice(0, 60), grammes: r0(num(a.grammes ?? a.g ?? a.poids)),
+      kcal: num(a.kcal ?? a.calories), p: num(a.proteines ?? a['protéines']), g: num(a.glucides), l: num(a.lipides) };
+    if (!it.kcal) it.kcal = kcalOf(it.p, it.g, it.l);
+    return it;
+  }).filter(it => it.grammes || it.kcal);
+  const conf = String(j?.confiance || '').toLowerCase();
+  return { plat: String(j?.plat || '').slice(0, 60), items, confiance: ['faible', 'moyenne', 'haute'].includes(conf) ? conf : 'moyenne', remarque: String(j?.remarque || '').slice(0, 300) };
+}
+
+/**
+ * Analyse une photo de repas avec Claude.
+ * dataUrl : image JPEG (data URL) ; renvoie { plat, items:[{nom, grammes, kcal, p, g, l}], confiance, remarque }
+ * ou null si aucune clé n'est enregistrée. Lève une AIError en cas de problème.
+ */
+async function analyzePhoto(dataUrl, precision = '') {
+  const key = getApiKey();
+  if (!key) return null;
+  const b64 = String(dataUrl).split(',')[1] || '';
+  const model = aiModel().id;
+  let data;
+  try { data = await callClaude(buildAIRequest(b64, precision, model, true), key); }
+  catch (e) {
+    // si l'API refuse le réglage d'effort, on relance une fois sans
+    if (e.kind === 'request' && e.status === 400 && /effort|output_config/i.test(e.apiMsg || '')) data = await callClaude(buildAIRequest(b64, precision, model, false), key);
+    else if (e.kind === 'busy' && /surchargé/.test(e.message)) { await new Promise(r => setTimeout(r, 1500)); data = await callClaude(buildAIRequest(b64, precision, model, true), key); }
+    else throw e;
+  }
+  countAnalysis(data?.usage, model);
+  const text = (data?.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  if (!text && data?.stop_reason === 'refusal') throw new AIError('parse', 'Claude a refusé d\u2019analyser cette image.');
+  return normalizeAI(extractJSON(text));
+}
+
+async function testApiKey(key) {
+  const data = await callClaude({ model: aiModel().id, max_tokens: 16, messages: [{ role: 'user', content: 'Réponds juste OK.' }] }, key);
+  return !!data;
+}
+
+/* Redimensionne/compresse côté téléphone */
 function resizeImage(file, max = 360, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const img = new Image(), url = URL.createObjectURL(file);
     img.onload = () => {
       const s = Math.min(1, max / Math.max(img.width, img.height));
       const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', quality));
     };
     img.onerror = e => { URL.revokeObjectURL(url); reject(e); };
     img.src = url;
   });
 }
+
 async function onPhoto(file) {
   if (!file) return;
-  let thumb;
+  let thumb, big;
   try { thumb = await resizeImage(file); } catch { return toast('Image illisible'); }
+  const precision = ($('#photoPrecision')?.value || '').trim();
+  if (!getApiKey()) return openPhotoJournal(thumb, true);
+  try { big = await resizeImage(file, 1024, 0.8); } catch { big = thumb; }
+  runAnalysis({ thumb, big, precision });
+}
+
+let aiRun = 0;
+async function runAnalysis(ctx) {
+  const run = ++aiRun;
+  openSheet(`
+    <h3>Analyse de ton repas…</h3>
+    <img class="photo-preview" src="${ctx.thumb}" alt="">
+    <div class="ai-loading"><span class="spinner" aria-hidden="true"></span><span>Claude regarde ton assiette (5 à 15 s)</span></div>
+    ${ctx.precision ? `<p class="hint">Précision : « ${esc(ctx.precision)} »</p>` : ''}
+    <button class="btn ghost block" id="aiCancel">Annuler</button>`, () => { if (aiRun === run) aiRun++; });
+  $('#aiCancel').onclick = () => { aiRun++; closeSheet(); };
+  try {
+    const res = await analyzePhoto(ctx.big, ctx.precision);
+    if (run !== aiRun) return; // annulé entre-temps
+    if (!res) return openPhotoJournal(ctx.thumb, true);
+    openAIResult(ctx, res);
+  } catch (e) {
+    if (run !== aiRun) return;
+    console.warn('analyse', e);
+    openAIError(ctx, e instanceof AIError ? e : new AIError('other', 'Erreur inattendue : ' + (e.message || e), true));
+  }
+}
+
+function openAIError(ctx, e) {
+  const toSettings = e.kind === 'auth' || e.kind === 'model' || e.kind === 'nokey';
+  const toConsole = e.kind === 'credit' || e.kind === 'auth';
+  openSheet(`
+    <h3>Analyse impossible</h3>
+    <img class="photo-preview small" src="${ctx.thumb}" alt="">
+    <div class="ai-error" role="alert">${esc(e.message)}</div>
+    ${toConsole ? '<p class="hint"><a href="https://console.anthropic.com/" target="_blank" rel="noopener">Ouvrir console.anthropic.com ↗</a></p>' : ''}
+    ${e.retry ? '<button class="btn block" id="aiRetry">↻ Réessayer</button>' : ''}
+    ${toSettings ? '<button class="btn ghost block mt8" id="aiGoSettings">⚙ Ouvrir Réglages → Analyse photo</button>' : ''}
+    <button class="btn ghost block mt8" id="aiManual">Enregistrer sans analyse</button>
+    <button class="btn ghost block mt8" data-close>Annuler</button>`);
+  if (e.retry) $('#aiRetry').onclick = () => runAnalysis(ctx);
+  if (toSettings) $('#aiGoSettings').onclick = () => { closeSheet(); goAISettings(); };
+  $('#aiManual').onclick = () => openPhotoJournal(ctx.thumb, false);
+}
+function goAISettings() { show('settings'); setTimeout(() => $('#aiCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }
+
+/* Écran de résultat : liste modifiable */
+function openAIResult(ctx, res) {
+  // chaque ligne garde ses valeurs « par gramme » pour recalculer quand on change le poids
+  const rows = res.items.map(it => ({ nom: it.nom, grammes: it.grammes || 100, per: perGram(it, it.grammes || 100) }));
+  const confLbl = { faible: 'Confiance faible', moyenne: 'Confiance moyenne', haute: 'Confiance haute' }[res.confiance];
+  const dayLbl = curDate === todayKey() ? 'Ajouter à aujourd\u2019hui' : `Ajouter (${dateLabel(curDate).toLowerCase()})`;
+  openSheet(`
+    <h3>Résultat de l'analyse</h3>
+    <div class="ai-head"><img class="thumb big" src="${ctx.thumb}" alt="">
+      <div><span class="conf conf-${res.confiance}">${confLbl}</span>
+      ${res.remarque ? `<p class="hint ai-rem">${esc(res.remarque)}</p>` : ''}</div></div>
+    <label>Nom du repas<input id="aiName" value="${esc(res.plat || (res.items[0] ? res.items.map(i => i.nom).slice(0, 3).join(', ') : 'Repas (photo)'))}"></label>
+    <h4>Aliments détectés <small class="muted">(modifie les grammes)</small></h4>
+    <ul class="ai-items" id="aiItems"></ul>
+    <button class="btn ghost block small" id="aiAddRow">+ Ajouter un aliment</button>
+    <datalist id="baseFoodsDL">${BASE_FOODS.map(f => `<option value="${esc(f.name)}">`).join('')}</datalist>
+    <div class="ai-total" id="aiTotal"></div>
+    <details class="ai-redo"><summary>Pas juste ? Ajoute une précision et relance</summary>
+      <input id="aiPrecision" placeholder="ex. il y a 150 g de riz" value="${esc(ctx.precision || '')}">
+      <button class="btn ghost block small mt8" id="aiRedo">↻ Relancer l'analyse</button></details>
+    <button class="btn block" id="aiSave">${dayLbl}</button>
+    <button class="btn ghost block mt8" id="aiCancelRes">Annuler</button>`);
+  const list = $('#aiItems');
+  const render = () => {
+    list.innerHTML = rows.length ? rows.map((r, i) => {
+      const m = macrosOf(r);
+      return `<li data-i="${i}">
+        <div class="ai-row1"><input class="ai-nom" data-f="nom" value="${esc(r.nom)}" list="baseFoodsDL" aria-label="Aliment">
+          <label class="ai-g"><input type="number" data-f="grammes" inputmode="decimal" min="0" value="${r0(r.grammes)}" aria-label="Grammes"><span>g</span></label>
+          <button class="del" data-rm="${i}" aria-label="Supprimer la ligne">✕</button></div>
+        <div class="ai-row2">
+          <label>kcal<input type="number" data-f="kcal" inputmode="numeric" value="${r0(m.kcal)}"></label>
+          <label>P<input type="number" data-f="p" inputmode="decimal" value="${r1(m.p)}"></label>
+          <label>G<input type="number" data-f="g" inputmode="decimal" value="${r1(m.g)}"></label>
+          <label>L<input type="number" data-f="l" inputmode="decimal" value="${r1(m.l)}"></label></div></li>`;
+    }).join('') : '<li class="empty">Aucun aliment. Ajoute-en un.</li>';
+    renderTotal();
+  };
+  const renderTotal = () => {
+    const t = sumRows(rows);
+    $('#aiTotal').innerHTML = `<b>Total</b><span class="pill"><b>${fmt(t.kcal)}</b> kcal</span><span class="pill">P ${r0(t.p)} g</span><span class="pill">G ${r0(t.g)} g</span><span class="pill">L ${r0(t.l)} g</span>`;
+  };
+  const syncRow = li => { // met à jour les champs macros d'une ligne sans reconstruire la liste (garde le focus)
+    const r = rows[+li.dataset.i], m = macrosOf(r);
+    li.querySelector('[data-f=kcal]').value = r0(m.kcal); li.querySelector('[data-f=p]').value = r1(m.p);
+    li.querySelector('[data-f=g]').value = r1(m.g); li.querySelector('[data-f=l]').value = r1(m.l);
+  };
+  list.addEventListener('input', e => {
+    const inp = e.target.closest('[data-f]'), li = e.target.closest('li[data-i]'); if (!inp || !li) return;
+    const r = rows[+li.dataset.i], f = inp.dataset.f, v = parseFloat(String(inp.value).replace(',', '.')) || 0;
+    if (f === 'nom') r.nom = inp.value;
+    else if (f === 'grammes') { r.grammes = v; syncRow(li); }
+    else { // modification directe d'une macro : on recalcule la valeur par gramme
+      const g = r.grammes || 100; if (!r.grammes) { r.grammes = 100; li.querySelector('[data-f=grammes]').value = 100; }
+      r.per[f] = v / g;
+      if (f !== 'kcal') { r.per.kcal = kcalOf(r.per.p, r.per.g, r.per.l); li.querySelector('[data-f=kcal]').value = r0(r.per.kcal * r.grammes); }
+    }
+    renderTotal();
+  });
+  list.addEventListener('change', e => { // nom choisi dans les aliments de base → remplit les macros si la ligne est vide
+    const inp = e.target.closest('[data-f=nom]'), li = e.target.closest('li[data-i]'); if (!inp || !li) return;
+    const r = rows[+li.dataset.i], bf = BASE_FOODS.find(f => f.name === inp.value);
+    if (bf && !macrosOf(r).kcal) { r.per = perGram(bf, 100); syncRow(li); renderTotal(); }
+  });
+  list.addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (b) { rows.splice(+b.dataset.rm, 1); render(); } });
+  $('#aiAddRow').onclick = () => { rows.push({ nom: '', grammes: 100, per: { kcal: 0, p: 0, g: 0, l: 0 } }); render(); list.querySelector('li:last-child .ai-nom')?.focus(); };
+  $('#aiRedo').onclick = () => { ctx.precision = $('#aiPrecision').value.trim(); runAnalysis(ctx); };
+  $('#aiCancelRes').onclick = closeSheet;
+  $('#aiSave').onclick = () => {
+    const kept = rows.filter(r => macrosOf(r).kcal > 0 || r.grammes > 0);
+    if (!kept.length) return toast('Ajoute au moins un aliment');
+    const t = sumRows(kept);
+    const items = kept.map(r => { const m = macrosOf(r); return { nom: r.nom.trim() || 'Aliment', grammes: r0(r.grammes), kcal: r0(m.kcal), p: r1(m.p), g: r1(m.g), l: r1(m.l) }; });
+    const en = addEntry({ name: $('#aiName').value.trim() || 'Repas (photo)', ...t }, `📷 IA · ${r0(kept.reduce((a, r) => a + (+r.grammes || 0), 0))} g`, ctx.thumb);
+    en.items = items; en.ai = { model: aiModel().id, confiance: res.confiance }; save();
+    closeSheet();
+  };
+  render();
+}
+function perGram(it, grams) { const g = grams || 100; return { kcal: (it.kcal || 0) / g, p: (it.p || 0) / g, g: (it.g || 0) / g, l: (it.l || 0) / g }; }
+function macrosOf(r) { const q = +r.grammes || 0; return { kcal: r.per.kcal * q, p: r.per.p * q, g: r.per.g * q, l: r.per.l * q }; }
+function sumRows(rows) { return rows.reduce((a, r) => { const m = macrosOf(r); return { kcal: a.kcal + m.kcal, p: a.p + m.p, g: a.g + m.g, l: a.l + m.l }; }, { kcal: 0, p: 0, g: 0, l: 0 }); }
+
+/* Photo « journal » sans analyse (pas de clé, ou en secours) */
+function openPhotoJournal(thumb, noKey) {
   openSheet(`
     <h3>Photo du repas</h3>
     <img class="photo-preview" src="${thumb}" alt="">
-    <p class="hint"><span class="badge">Analyse automatique bientôt</span> En attendant, choisis un repas rapide ou entre les macros.</p>
+    ${noKey ? `<p class="hint">💡 Pour l'analyse automatique des macros, ajoute ta clé Claude dans <a href="#settings" id="phGoAI">Réglages → Analyse photo (IA)</a>. En attendant, choisis un repas rapide ou entre les macros.</p>` : '<p class="hint">Choisis un repas rapide ou entre les macros.</p>'}
     <label>Repas rapide<select id="phPreset"><option value="">— aucun —</option>${S.presets.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
     <div class="grid2" style="margin-top:10px">
       <label class="span2">Nom<input id="phName" placeholder="ex. Assiette du midi"></label>
@@ -596,8 +870,7 @@ async function onPhoto(file) {
       <label>Lipides (g)<input type="number" id="phL" inputmode="decimal"></label>
     </div>
     <button class="btn block" id="phSave">Ajouter au journal</button>`);
-  const ai = await analyzePhoto(thumb);
-  if (ai) fillPhoto(ai);
+  if (noKey) $('#phGoAI').onclick = e => { e.preventDefault(); closeSheet(); goAISettings(); };
   $('#phPreset').onchange = e => { const p = S.presets.find(x => x.id === e.target.value); if (p) fillPhoto(scaled(p, portion)); };
   $('#phSave').onclick = () => {
     const p = +$('#phP').value || 0, g = +$('#phG').value || 0, l = +$('#phL').value || 0;
@@ -607,6 +880,57 @@ async function onPhoto(file) {
   };
 }
 function fillPhoto(x) { $('#phName').value = x.name; $('#phK').value = r0(x.kcal); $('#phP').value = r1(x.p); $('#phG').value = r1(x.g); $('#phL').value = r1(x.l); }
+
+/* Détail d'une entrée photo dans le journal */
+function openEntryPhoto(en) {
+  openSheet(`<h3>${esc(en.name)}</h3><img class="photo-preview" src="${en.photo}" alt="">
+    ${en.items?.length ? `<ul class="ing">${en.items.map(i => `<li><span class="q">${r0(i.grammes)} g</span><span class="n">${esc(i.nom)}<small>${fmt(i.kcal)} kcal · P ${r0(i.p)} · G ${r0(i.g)} · L ${r0(i.l)}</small></span></li>`).join('')}</ul>` : ''}
+    <div class="macro-line"><span class="pill"><b>${fmt(en.kcal)}</b> kcal</span><span class="pill">P ${r0(en.p)} g</span><span class="pill">G ${r0(en.g)} g</span><span class="pill">L ${r0(en.l)} g</span></div>
+    <button class="btn ghost block" data-close>Fermer</button>`);
+}
+
+/* Réglages : carte « Analyse photo (IA) » */
+function renderAISettings() {
+  const k = getApiKey(), u = aiUsage();
+  $('#aiKeyStatus').innerHTML = k ? `✓ Clé enregistrée : <code>${esc(maskKey(k))}</code>` : 'Aucune clé enregistrée : les photos sont gardées sans analyse.';
+  $('#aiKeyStatus').className = 'ai-status ' + (k ? 'ok' : '');
+  $('#aiKeyInput').placeholder = k ? 'Nouvelle clé (remplace)' : 'sk-ant-…';
+  $('#aiTestKey').disabled = !k; $('#aiDelKey').disabled = !k;
+  $('#photoNoKey').hidden = !!k;
+  $('#aiModel').innerHTML = AI_MODELS.map(m => `<option value="${m.id}" ${m.id === aiModel().id ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+  $('#aiCost').textContent = `${aiModel().cost} (tarif Anthropic : ${String(aiModel().price[0]).replace('.', ',')} $ / ${String(aiModel().price[1]).replace('.', ',')} $ par million de tokens en entrée / sortie).`;
+  const mois = parseKey(u.month + '-01').toLocaleDateString('fr-FR', { month: 'long' });
+  $('#aiCount').innerHTML = `<b>${u.n}</b> analyse${u.n > 1 ? 's' : ''} en ${mois}${u.usd ? ` · ≈ ${u.usd < 0.01 ? '< 0,01' : u.usd.toFixed(2).replace('.', ',')} $` : ''}`;
+}
+function bindAISettings() {
+  $('#aiKeyToggle').onclick = () => {
+    const i = $('#aiKeyInput'), showIt = i.type === 'password';
+    i.type = showIt ? 'text' : 'password'; $('#aiKeyToggle').textContent = showIt ? '🙈' : '👁';
+    $('#aiKeyToggle').setAttribute('aria-label', showIt ? 'Masquer la clé' : 'Afficher la clé');
+  };
+  $('#aiKeyForm').onsubmit = e => {
+    e.preventDefault();
+    const v = $('#aiKeyInput').value.replace(/\s+/g, '');
+    if (!v) return toast('Colle ta clé d\u2019abord');
+    if (!v.startsWith('sk-ant-') && !confirm('Cette clé ne commence pas par « sk-ant- ». L\u2019enregistrer quand même ?')) return;
+    setApiKey(v); $('#aiKeyInput').value = ''; $('#aiKeyInput').type = 'password'; $('#aiKeyToggle').textContent = '👁';
+    renderAISettings(); toast('Clé enregistrée sur ce téléphone');
+  };
+  $('#aiTestKey').onclick = async () => {
+    const k = getApiKey(); if (!k) return;
+    const b = $('#aiTestKey'); b.disabled = true; b.textContent = 'Test…';
+    $('#aiTestResult').hidden = true;
+    try { await testApiKey(k); toast('✓ Clé valide, l\u2019analyse est prête'); $('#aiKeyStatus').innerHTML += ' · <b>testée ✓</b>'; }
+    catch (e) { alertBox(e.message || String(e)); }
+    finally { b.disabled = false; b.textContent = 'Tester la clé'; }
+  };
+  $('#aiDelKey').onclick = () => {
+    if (!confirm('Supprimer la clé Claude de ce téléphone ?')) return;
+    setApiKey(''); renderAISettings(); toast('Clé supprimée');
+  };
+  $('#aiModel').onchange = e => { (S.ai ||= {}).model = e.target.value; save(); renderAISettings(); };
+}
+function alertBox(msg) { const el = $('#aiTestResult'); el.textContent = msg; el.hidden = false; setTimeout(() => (el.hidden = true), 12000); }
 
 /* ---------- Saisie manuelle & repas perso ---------- */
 function openManual() {
@@ -747,7 +1071,7 @@ function renderSettings() {
   const f = $('#goalsForm');
   for (const k of ['kcal', 'p', 'g', 'l']) f.elements[k].value = S.goals[k];
   f.elements.startW.value = S.profile.startW; f.elements.goalW.value = S.profile.goalW;
-  renderPresets();
+  renderPresets(); renderAISettings();
 }
 function exportData() {
   const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
@@ -810,7 +1134,7 @@ function bind() {
     const d = e.target.closest('[data-del]');
     if (d) { const en = entries().find(x => x.id === d.dataset.del); if (en && confirm(`Supprimer « ${en.name} » ?`)) delEntry(en.id); return; }
     const ph = e.target.closest('[data-photo]');
-    if (ph) { const en = entries().find(x => x.id === ph.dataset.photo); openSheet(`<h3>${esc(en.name)}</h3><img class="photo-preview" src="${en.photo}" alt=""><button class="btn ghost block" data-close>Fermer</button>`); }
+    if (ph) { const en = entries().find(x => x.id === ph.dataset.photo); if (en) openEntryPhoto(en); }
   });
 
   $('#portionChips').addEventListener('click', e => {
@@ -855,6 +1179,8 @@ function bind() {
   $('#baseList').addEventListener('click', e => { const li = e.target.closest('[data-base]'); if (li) openGramsSheet(BASE_FOODS.find(f => f.name === li.dataset.base), 'Aliment de base'); });
   $('#manualBtn').onclick = openManual;
   $('#photoInput').onchange = e => { onPhoto(e.target.files[0]); e.target.value = ''; };
+  $('#photoGoAI').onclick = e => { e.preventDefault(); goAISettings(); };
+  bindAISettings();
 
   $('#sessionSeg').addEventListener('click', e => {
     const b = e.target.closest('[data-s]'); if (!b || b.dataset.s === S.draft.type) return;
@@ -918,4 +1244,4 @@ renderAll();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, get state() { return S; } }; // pour le débogage / branchement futur
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; } }; // pour le débogage / les tests
