@@ -27,6 +27,7 @@
 <main>
   <!-- AUJOURD'HUI -->
   <section class="view active" id="view-today">
+    <div class="card banner" id="backupBanner" hidden></div>
     <div class="card gauges">
       <div class="ring-wrap">
         <svg viewBox="0 0 120 120" class="ring">
@@ -45,6 +46,7 @@
     <div class="card">
       <div class="card-head"><h2>Repas du jour</h2><button class="btn small" data-goto="add">+ Ajouter</button></div>
       <ul class="entries" id="entries"></ul>
+      <button class="btn ghost block shaker-btn" id="shakerBtn" hidden></button>
     </div>
 
     <div class="card">
@@ -56,6 +58,11 @@
   <!-- AJOUTER -->
   <section class="view" id="view-add">
     <p class="hint" id="addFor"></p>
+    <div class="card">
+      <h2>⭐ Favoris</h2>
+      <div class="presets" id="favList"></div>
+      <button class="btn ghost block mt8" id="redoYesterday">↻ Refaire hier</button>
+    </div>
     <div class="card">
       <div class="card-head"><h2>Repas rapides</h2><button class="btn small ghost" id="newPresetBtn">+ Créer</button></div>
       <div class="chips" id="portionChips" role="radiogroup" aria-label="Portion">
@@ -195,6 +202,7 @@
         </div>
       </div>
       <p class="hint" id="sessionHint"></p>
+      <div id="warmup"></div>
       <div id="sessionExercises"></div>
       <button class="btn block success" id="finishSession">✓ Séance terminée</button>
     </div>
@@ -215,6 +223,7 @@
 
   <!-- PROGRÈS -->
   <section class="view" id="view-progress">
+    <div class="card" id="reviewCard"></div>
     <div class="card">
       <div class="card-head"><h2>Poids de corps</h2><span class="muted" id="weightSummary"></span></div>
       <div id="weightChart" class="chart"></div>
@@ -230,6 +239,24 @@
       <div class="card-head"><h2>Nutrition sur 7 jours</h2><div class="legend"><i class="dot kcal"></i>kcal <i class="dot prot"></i>prot.</div></div>
       <div id="weekChart2" class="chart"></div>
       <div id="weekStats" class="stats"></div>
+    </div>
+    <div class="card">
+      <h2>📈 Progression par exercice</h2>
+      <select id="exChartSel" aria-label="Exercice"></select>
+      <div class="chips mt8" id="exMetric"></div>
+      <p class="ex-record" id="exRecord"></p>
+      <div id="exChart" class="chart"></div>
+      <p class="hint" id="exChartNote" style="margin:6px 0 0"></p>
+    </div>
+    <div class="card" id="physiqueCard">
+      <h2>📸 Photos physique</h2>
+      <p class="hint">🔒 Tes photos restent <b>uniquement sur ce téléphone</b> (stockage IndexedDB de l'appli). Elles ne sont envoyées nulle part, sauf les 2 photos que tu choisis quand tu touches « Analyser avec Claude ». Elles ne sont dans la sauvegarde que si tu coches l'option.</p>
+      <div class="chips" id="phyPose"><span class="chips-label">Pose</span><button class="chip active" data-pose="face">Face</button><button class="chip" data-pose="profil">Profil</button><button class="chip" data-pose="dos">Dos</button></div>
+      <div class="row"><input type="date" id="phyDate" aria-label="Date des photos"><label class="btn grow" for="phyInput">📷 Ajouter</label></div>
+      <input type="file" id="phyInput" accept="image/*" multiple hidden>
+      <p class="hint" style="margin-top:0">Plusieurs photos d'un coup = face, profil puis dos. Même lumière, même heure, même tenue pour pouvoir comparer.</p>
+      <div id="phyTimeline"></div>
+      <div id="phyCompare"></div>
     </div>
   </section>
 
@@ -252,6 +279,13 @@
       <ul class="entries" id="presetAdmin"></ul>
       <button class="btn ghost block" id="restorePresets">Restaurer les repas par défaut</button>
     </div>
+    <div class="card" id="shakerCard">
+      <h2>🥤 Shaker en 1 tap</h2>
+      <p class="hint">Le bouton sous « Repas du jour » ajoute ce repas d'un seul tap.</p>
+      <select id="shakerSel" aria-label="Repas du bouton shaker"></select>
+      <p class="hint" id="shakerInfo" style="margin:8px 0"></p>
+      <button class="btn ghost block" id="shakerEdit">✎ Modifier la recette et les macros</button>
+    </div>
     <div class="card" id="aiCard">
       <h2>Analyse photo (IA)</h2>
       <p class="hint">Colle ici ta clé API Claude (console.anthropic.com → API Keys). Elle reste <b>uniquement sur ce téléphone</b>, n'est pas incluse dans l'export et n'est envoyée qu'à api.anthropic.com.</p>
@@ -273,13 +307,19 @@
       <p class="hint" style="margin:0"><a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Voir mon crédit Anthropic ↗</a></p>
     </div>
     <div class="card">
-      <h2>Sauvegarde</h2>
-      <p class="hint">Tes données restent sur ce téléphone. Exporte-les de temps en temps.</p>
-      <div class="row">
-        <button class="btn grow" id="exportBtn">⬇ Exporter (JSON)</button>
-        <label class="btn ghost grow" for="importInput">⬆ Importer</label>
+      <h2>💾 Sauvegarde</h2>
+      <p class="hint">Tes données restent sur ce téléphone, et iOS peut parfois les effacer. « Sauvegarder » ouvre la feuille de partage : choisis « Enregistrer dans Fichiers » (iCloud Drive). Ta clé Claude n'est jamais incluse.</p>
+      <p class="ai-status" id="persistStatus"></p>
+      <p class="hint" id="lastBackupTxt"></p>
+      <label class="check-row"><input type="checkbox" id="exportPhotos"> Inclure les photos physique (fichier beaucoup plus lourd)</label>
+      <div class="row mt8">
+        <button class="btn grow" id="exportBtn">💾 Sauvegarder</button>
+        <label class="btn ghost grow" for="importInput">⬆ Restaurer un fichier</label>
         <input type="file" id="importInput" accept="application/json,.json" hidden>
       </div>
+      <h3 class="phy-h">Instantanés automatiques <small class="muted">(1 par jour, 7 derniers)</small></h3>
+      <ul class="entries" id="snapList"></ul>
+      <button class="btn ghost block small mt8" id="snapNow">Faire un instantané maintenant</button>
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
     <div class="card">
@@ -288,7 +328,7 @@
       Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
       Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
     </div>
-    <p class="hint center">Coach Killian · v9 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v10 · données stockées localement</p>
   </section>
 </main>
 
@@ -306,6 +346,13 @@
     <div class="sheet-grip"></div>
     <div id="sheetBody"></div>
   </div>
+</div>
+<div class="rest-bar" id="restBar" role="timer" hidden>
+  <div class="rest-fill" id="restFill"></div>
+  <div class="rest-txt"><span id="restLabel">Repos</span><b id="restTime">0:00</b></div>
+  <button id="restMinus" aria-label="Moins 15 secondes">−15 s</button>
+  <button id="restPlus" aria-label="Plus 15 secondes">+15 s</button>
+  <button id="restStop" aria-label="Arrêter le minuteur">✕</button>
 </div>
 <div class="toast" id="toast" hidden></div>
 
