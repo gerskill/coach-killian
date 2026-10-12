@@ -843,6 +843,125 @@ async function lookupBarcode(code) {
   } catch (e) { st.textContent = 'Recherche impossible (réseau ?).'; }
 }
 
+/* ---------- Dictée du code-barres (Web Speech API) ----------
+ * iPhone : webkitSpeechRecognition marche dans Safari (Siri/Dictée activés) mais Apple ne l'active PAS
+ * dans les web apps ajoutées à l'écran d'accueil (WebKit bug 225298) → on bascule alors sur le 🎤 du clavier iOS. */
+const FR_UNITS = { zero: 0, 'zéro': 0, un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9 };
+const FR_TEENS = { dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16 };
+const FR_TENS = { vingt: 20, vingts: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60 };
+/* « trois zéro dix-sept soixante-deux » → "3017 62" sans espace → "301762" */
+function parseSpokenDigits(text) {
+  // on garde l'info « collé par un tiret » : « quatre-vingt-deux » = 82 mais « quatre vingt-deux » = 4 puis 22
+  const toks = [], hy = [];
+  String(text || '').toLowerCase().replace(/[’']/g, ' ').replace(/[‐–—_]/g, '-').replace(/[^\p{L}\d\s-]+/gu, ' ')
+    .split(/\s+/).filter(Boolean).forEach(w => w.split('-').filter(Boolean).forEach((p, k) => { toks.push(p); hy.push(k > 0); }));
+  let out = '', i = 0;
+  const unitAt = k => (toks[k] in FR_UNITS ? FR_UNITS[toks[k]] : null);
+  const teenAt = k => { // 10..19 : dix, onze..seize, dix-sept/huit/neuf ; renvoie [valeur, nb de mots]
+    if (toks[k] in FR_TEENS && toks[k] !== 'dix') return [FR_TEENS[toks[k]], 1];
+    if (toks[k] === 'dix') { const u = unitAt(k + 1); return u >= 7 ? [10 + u, 2] : [10, 1]; }
+    return null;
+  };
+  while (i < toks.length) {
+    const t = toks[i];
+    if (/^\d+$/.test(t)) { out += t; i++; continue; }
+    const d = t.replace(/\D/g, ''); // « 3e », « n°3 »…
+    if (d && /\d/.test(t) && !/[a-zé]{3,}/.test(t)) { out += d; i++; continue; }
+    let base = null, n = 0;
+    if (t === 'quatre' && (toks[i + 1] === 'vingt' || toks[i + 1] === 'vingts') && (hy[i + 1] || !hy[i + 2] || i + 2 >= toks.length)) { base = 80; n = 2; }
+    else if (t in FR_TENS) { base = FR_TENS[t]; n = 1; }
+    if (base != null) {
+      let j = i + n, v = base;
+      if (toks[j] === 'et' && (toks[j + 1] === 'un' || toks[j + 1] === 'une' || toks[j + 1] === 'onze')) { v += toks[j + 1] === 'onze' ? 11 : 1; j += 2; }
+      else if ((base === 60 || base === 80) && teenAt(j)) { const [tv, tn] = teenAt(j); v += tv; j += tn; }
+      else if (unitAt(j) > 0) { v += unitAt(j); j++; }
+      out += String(v); i = j; continue;
+    }
+    const te = teenAt(i); if (te) { out += String(te[0]); i += te[1]; continue; }
+    const u = unitAt(i); if (u != null) { out += String(u); i++; continue; }
+    i++; // « et », « euh », mots inconnus : ignorés
+  }
+  return out;
+}
+function eanValid(code) {
+  if (!/^(\d{8}|\d{12}|\d{13})$/.test(code)) return false;
+  const d = code.split('').map(Number), check = d.pop();
+  const sum = d.reverse().reduce((a, x, k) => a + x * (k % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+const getSR = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const isIOSStandalone = () => navigator.standalone === true;
+const speechAvailable = () => !!getSR() && !isIOSStandalone();
+const KB_MIC_HINT = 'Astuce iPhone : touche le champ puis le 🎤 du clavier pour dicter les chiffres.';
+let dict = null; // dictée en cours { rec, input, status, btn, timer }
+function stopDictation(silent) {
+  if (!dict) return;
+  const d = dict; dict = null; clearTimeout(d.timer);
+  try { d.rec.onresult = d.rec.onerror = d.rec.onend = d.rec.onstart = d.rec.onaudiostart = null; d.rec.abort(); } catch { }
+  d.btn.classList.remove('listening'); d.btn.setAttribute('aria-pressed', 'false'); d.btn.textContent = '🎤';
+  if (!silent && d.status.dataset.state === 'listening') setVoiceStatus(d.status, '', '');
+}
+function setVoiceStatus(el, state, html) { el.dataset.state = state; el.innerHTML = html; el.hidden = !html; }
+function micFallback(input, status, why) {
+  setVoiceStatus(status, 'info', `${why ? esc(why) + '<br>' : ''}${KB_MIC_HINT}`);
+  input.setAttribute('inputmode', 'numeric'); input.focus();
+}
+/* btn 🎤 → écoute ; remplit input en direct ; onCode(code) quand un EAN valide est reconnu */
+function startDictation(input, status, btn, onCode) {
+  if (dict && dict.btn === btn) return stopDictation();
+  stopDictation(true);
+  const SR = getSR();
+  if (!SR) return micFallback(input, status, 'La dictée n\u2019est pas disponible dans ce navigateur.');
+  if (isIOSStandalone()) return micFallback(input, status, 'Dans l\u2019appli de l\u2019écran d\u2019accueil, iOS bloque la dictée web (elle marche dans Safari).');
+  let rec;
+  try { rec = new SR(); } catch { return micFallback(input, status, 'La dictée n\u2019a pas pu démarrer.'); }
+  rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  const cur = input.value.replace(/\D/g, '');
+  const base = cur && cur.length < 13 && !eanValid(cur) ? cur : ''; // on complète un code commencé
+  let started = false, done = false, finalTxt = '';
+  dict = { rec, input, status, btn, timer: null };
+  btn.classList.add('listening'); btn.setAttribute('aria-pressed', 'true'); btn.textContent = '■';
+  setVoiceStatus(status, 'listening', `<span class="rec-dot"></span> J\u2019écoute… dis les chiffres du code${base ? ` (suite de ${base})` : ''}`);
+  const finish = code => {
+    done = true; stopDictation(true);
+    if (eanValid(code)) { setVoiceStatus(status, 'ok', `✓ Code ${code} reconnu`); onCode(code); }
+    else if (code.length) setVoiceStatus(status, 'warn', `${code.length} chiffre${code.length > 1 ? 's' : ''} : ${code.length > 13 || [8, 12, 13].includes(code.length) ? 'code invalide (clé de contrôle)' : 'code incomplet'}. Corrige-le, ou touche 🎤 pour dicter la suite.`);
+    else setVoiceStatus(status, 'warn', 'Je n\u2019ai pas reconnu de chiffres. Réessaie en parlant près du micro.');
+  };
+  const fill = (txt, final) => {
+    const code = (base + parseSpokenDigits(txt)).slice(0, 14);
+    input.value = code;
+    if (!final) { setVoiceStatus(status, 'listening', `<span class="rec-dot"></span> « ${esc(txt.trim())} »`); if (code.length === 13 && eanValid(code)) finish(code); }
+    return code;
+  };
+  rec.onstart = rec.onaudiostart = () => { started = true; };
+  rec.onresult = e => {
+    started = true;
+    let interim = ''; finalTxt = '';
+    for (let k = 0; k < e.results.length; k++) { const r = e.results[k]; if (r.isFinal) finalTxt += r[0].transcript + ' '; else interim += r[0].transcript + ' '; }
+    if (done) return;
+    const all = finalTxt + interim;
+    const code = fill(all, !interim.trim());
+    if (!done && !interim.trim() && finalTxt.trim()) finish(code);
+  };
+  rec.onerror = e => {
+    if (done) return; done = true; stopDictation(true);
+    const err = e.error || '';
+    if (err === 'not-allowed' || err === 'service-not-allowed') micFallback(input, status, isIOSStandalone() || err === 'service-not-allowed'
+      ? 'La dictée est refusée ici (micro ou Siri/Dictée désactivés).' : 'Micro refusé. Autorise le micro pour ce site (iPhone : Réglages › Safari › Micro).');
+    else if (err === 'no-speech') setVoiceStatus(status, 'warn', 'Je n\u2019ai rien entendu. Touche 🎤 et dis les chiffres.');
+    else if (err === 'network') setVoiceStatus(status, 'warn', 'La dictée a besoin d\u2019internet. Tape le code ou réessaie.');
+    else if (err === 'aborted') setVoiceStatus(status, '', '');
+    else micFallback(input, status, 'Erreur de dictée (' + err + ').');
+  };
+  rec.onend = () => { if (done || !dict || dict.rec !== rec) return; finish(input.value.replace(/\D/g, '')); };
+  // sur un iPhone où l'API existe mais ne démarre jamais (web app écran d'accueil…), on ne reste pas bloqué
+  dict.timer = setTimeout(() => { if (!started && dict && dict.rec === rec) { done = true; stopDictation(true); micFallback(input, status, 'La dictée ne répond pas ici.'); } }, 4000);
+  try { rec.start(); }
+  catch (e) { done = true; stopDictation(true); micFallback(input, status, 'La dictée n\u2019a pas pu démarrer.'); }
+}
+function micHint(status) { if (!speechAvailable()) setVoiceStatus(status, 'info', KB_MIC_HINT); }
+
 /* ---------- Scanner code-barres ----------
  * Android/Chrome : BarcodeDetector natif. iPhone/Safari (et Firefox) : polyfill barcode-detector (MIT)
  * + zxing-wasm, servis depuis vendor/ (aucun CDN) et mis en cache par le service worker → marche hors ligne. */
@@ -888,9 +1007,12 @@ async function startScan() {
   scanActive = true;
   openSheet(`<h3>Scanner un code-barres</h3><p class="hint" id="scanStatus">Ouverture de la caméra…</p>
     <div class="scan-box"><video id="scanVideo" playsinline webkit-playsinline muted autoplay></video><div class="scan-frame"></div></div>
-    <form class="row mt8" id="scanManual"><input type="text" inputmode="numeric" pattern="[0-9]*" id="scanManualInput" placeholder="ou tape le code"><button class="btn ghost" type="submit">OK</button></form>
+    <form class="row mt8" id="scanManual"><input type="text" inputmode="numeric" pattern="[0-9]*" id="scanManualInput" placeholder="ou tape / dicte le code" autocomplete="off"><button class="mic-btn" type="button" id="scanMic" aria-label="Dicter le code-barres" aria-pressed="false">🎤</button><button class="btn ghost" type="submit">OK</button></form>
+    <p class="voice-status" id="scanVoiceStatus" role="status" aria-live="polite" hidden></p>
     <button class="btn ghost block" data-close>Annuler</button>`, stopScan);
   $('#scanManual').onsubmit = e => { e.preventDefault(); const c = $('#scanManualInput').value; closeSheet(); lookupBarcode(c); };
+  $('#scanMic').onclick = () => startDictation($('#scanManualInput'), $('#scanVoiceStatus'), $('#scanMic'), code => { closeSheet(); lookupBarcode(code); });
+  micHint($('#scanVoiceStatus'));
   const detP = getBarcodeDetector();
   detP.catch(() => {});
   try {
@@ -921,7 +1043,7 @@ async function startScan() {
   tick();
 }
 function stopScan() {
-  scanActive = false;
+  scanActive = false; stopDictation(true);
   clearTimeout(scanTimer); scanTimer = null;
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
 }
@@ -1921,7 +2043,9 @@ function bind() {
 
   $('#searchForm').onsubmit = e => { e.preventDefault(); $('#searchInput').blur(); doSearch($('#searchInput').value); };
   $('#results').addEventListener('click', e => { const li = e.target.closest('[data-res]'); if (li) openGramsSheet(lastResults[+li.dataset.res], 'Open Food Facts'); });
-  $('#barcodeForm').onsubmit = e => { e.preventDefault(); lookupBarcode($('#barcodeInput').value); };
+  $('#barcodeForm').onsubmit = e => { e.preventDefault(); stopDictation(); lookupBarcode($('#barcodeInput').value); };
+  $('#barcodeMic').onclick = () => startDictation($('#barcodeInput'), $('#barcodeVoiceStatus'), $('#barcodeMic'), code => lookupBarcode(code));
+  micHint($('#barcodeVoiceStatus'));
   $('#scanBtn').onclick = startScan;
   $('#baseFilter').addEventListener('input', renderBase);
   $('#baseList').addEventListener('click', e => { const li = e.target.closest('[data-base]'); if (li) openGramsSheet(BASE_FOODS.find(f => f.name === li.dataset.base), 'Aliment de base'); });
@@ -1997,4 +2121,4 @@ renderAll();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, get frigo() { return FR; }, frigoDetectPrompt, frigoRecipePrompt, normalizeRecipes, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, get frigo() { return FR; }, frigoDetectPrompt, frigoRecipePrompt, normalizeRecipes, parseSpokenDigits, eanValid, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests

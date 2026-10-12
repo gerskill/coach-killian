@@ -88,9 +88,11 @@
         <button class="btn ghost grow" id="scanBtn">▦ Scanner un code-barres</button>
       </div>
       <form class="row" id="barcodeForm">
-        <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Code-barres à la main">
+        <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Code-barres (taper ou dicter)" autocomplete="off">
+        <button class="mic-btn" type="button" id="barcodeMic" aria-label="Dicter le code-barres" aria-pressed="false">🎤</button>
         <button class="btn ghost" type="submit">OK</button>
       </form>
+      <p class="voice-status" id="barcodeVoiceStatus" role="status" aria-live="polite" hidden></p>
       <div id="searchStatus" class="hint"></div>
       <ul class="results" id="results"></ul>
     </div>
@@ -286,7 +288,7 @@
       Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
       Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
     </div>
-    <p class="hint center">Coach Killian · v8 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v9 · données stockées localement</p>
   </section>
 </main>
 
