@@ -352,3 +352,79 @@ body.resting .toast{bottom:calc(var(--tab-h) + env(safe-area-inset-bottom) + 82p
 .phy-ul{margin:0;padding-left:20px;font-size:.9rem}.phy-ul li{margin-bottom:4px}
 .phy-p{font-size:.9rem;margin:0}
 .phy-disc{font-size:.8rem;color:var(--muted);background:var(--soft);border:1px dashed var(--line);border-radius:12px;padding:10px;margin:12px 0}
+
+/* ================= DESIGN 2026 : tokens + couche visuelle (dark first) ================= */
+:root{
+  --bg:#07090f; --card:#10141d; --card2:#161b26; --text:#f2f4f8; --muted:#9aa3b5; --line:rgba(255,255,255,.07); --soft:#0c1018;
+  --accent:#30d158; --accent2:#ff9f0a; --blue:#0a84ff; --yellow:#ffd60a; --red:#ff453a;
+  --kcal:#30d158; --p:#0a84ff; --g:#ffd60a; --l:#ff9f0a;
+  --r-sm:10px; --r-md:16px; --r-lg:24px; --radius:var(--r-lg);
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --shadow1:0 1px 0 rgba(255,255,255,.04) inset,0 8px 24px rgba(0,0,0,.35);
+  --ease:cubic-bezier(.2,.8,.2,1); --dur:200ms;
+  --font:"Inter","SF Pro Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f4f5f8; --card:#ffffff; --card2:#f7f8fb; --text:#0b0d12; --muted:#5b6476; --line:rgba(10,15,30,.08); --soft:#eef0f4;
+    --shadow1:0 1px 2px rgba(10,15,30,.05),0 8px 24px rgba(10,15,30,.06); color-scheme:light; }
+}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+b,.e-kcal,.bar-num,.ring-text,#kcalVal{font-variant-numeric:tabular-nums}
+h1,h2{letter-spacing:-.02em;font-weight:700}
+h2{font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow1);padding:var(--s4) var(--s4);margin-bottom:var(--s3)}
+.card.banner{background:linear-gradient(135deg,rgba(10,132,255,.16),rgba(48,209,88,.10)),var(--card);border-color:rgba(10,132,255,.35)}
+.btn{border-radius:999px;font-weight:600;transition:transform var(--dur) var(--ease),filter var(--dur) var(--ease),background var(--dur) var(--ease)}
+.btn:active,.tab:active{transform:scale(.97)}
+.btn:not(.ghost):not(.danger){background:var(--accent);color:#03130a}
+.btn.ghost{background:var(--card2);border:1px solid var(--line);color:var(--text)}
+input,select,textarea{background:var(--card2)!important;border:1px solid var(--line)!important;border-radius:var(--r-sm)!important;color:var(--text)!important;min-height:44px}
+input:focus-visible,select:focus-visible,textarea:focus-visible,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.entries li{border-color:var(--line)!important}
+.muted,.hint,.e-sub{color:var(--muted)}
+
+/* anneaux façon Apple Fitness */
+.gauges{background:radial-gradient(120% 100% at 0% 0%,rgba(48,209,88,.10),transparent 60%),var(--card)}
+.ring .ring-bg,.ring .mring-bg{fill:none;stroke-width:7;opacity:.18}
+.ring .ring-bg{stroke:var(--kcal)}
+.ring .ring-fg,.ring .mring{fill:none;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset 700ms var(--ease)}
+.ring .ring-fg{stroke:var(--kcal);filter:drop-shadow(0 0 6px rgba(48,209,88,.45))}
+.ring .mring[data-m=p]{stroke:var(--p)} .ring .mring-bg:nth-of-type(3){stroke:var(--p)}
+.ring .mring[data-m=g]{stroke:var(--g)} .ring .mring-bg:nth-of-type(5){stroke:var(--g)}
+.ring .mring[data-m=l]{stroke:var(--l)} .ring .mring-bg:nth-of-type(7){stroke:var(--l)}
+.ring .ring-fg.over{stroke:var(--red)}
+.ring-wrap{position:relative}
+.ring-text{position:static!important;inset:auto!important;transform:none!important;margin-top:var(--s2);text-align:center;display:flex;flex-direction:column;align-items:center}
+.ring-text b{font-size:26px;letter-spacing:-.03em}
+.ring-wrap{display:flex;flex-direction:column;align-items:center}
+.gauges .bars{display:flex;flex-direction:column;gap:var(--s3)}
+.kcal-big{font-size:28px;font-weight:700;letter-spacing:-.03em}
+.track{height:6px;border-radius:999px;background:var(--card2)}
+.fill{border-radius:999px;transition:width 600ms var(--ease)}
+.bar[data-k=p] .fill{background:var(--p)} .bar[data-k=g] .fill{background:var(--g)} .bar[data-k=l] .fill{background:var(--l)}
+.bar-head span:first-child::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.bar[data-k=p] .bar-head span:first-child::before{background:var(--p)}
+.bar[data-k=g] .bar-head span:first-child::before{background:var(--g)}
+.bar[data-k=l] .bar-head span:first-child::before{background:var(--l)}
+
+/* barre d'onglets flottante en verre */
+.tabbar{left:var(--s3)!important;right:var(--s3)!important;bottom:calc(var(--s2) + env(safe-area-inset-bottom))!important;border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--card) 72%,transparent)!important;backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border:1px solid var(--line)!important;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px!important;height:auto!important}
+.tab{border-radius:var(--r-md);font-size:10.5px;font-weight:600;color:var(--muted);gap:3px;padding:6px 0;transition:color var(--dur) var(--ease),background var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.tab svg.ti{width:22px;height:22px;display:block;margin:0 auto 2px}
+.tab.active{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+main{padding-bottom:calc(96px + env(safe-area-inset-bottom))!important}
+
+/* apparition des vues */
+.view.active{animation:ckIn 220ms var(--ease)}
+@keyframes ckIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* skeleton */
+.skeleton{background:linear-gradient(90deg,var(--card2),var(--soft),var(--card2));background-size:200% 100%;animation:ckSk 1.2s infinite linear;border-radius:var(--r-sm)}
+@keyframes ckSk{to{background-position:-200% 0}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+.gauges .ring{width:132px!important;height:132px!important}
+.gauges{gap:var(--s4)}
+.gauges .ring-wrap{height:auto!important;flex:0 0 132px}
+.gauges .ring{flex:0 0 132px}

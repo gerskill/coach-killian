@@ -30,9 +30,12 @@
     <div class="card banner" id="backupBanner" hidden></div>
     <div class="card gauges">
       <div class="ring-wrap">
-        <svg viewBox="0 0 120 120" class="ring">
+        <svg viewBox="0 0 120 120" class="ring" role="img" aria-label="Anneaux : calories, protéines, glucides, lipides">
           <circle cx="60" cy="60" r="52" class="ring-bg"/>
           <circle cx="60" cy="60" r="52" class="ring-fg" id="kcalRing"/>
+          <circle cx="60" cy="60" r="42" class="mring-bg"/><circle cx="60" cy="60" r="42" class="mring" data-m="p"/>
+          <circle cx="60" cy="60" r="34" class="mring-bg"/><circle cx="60" cy="60" r="34" class="mring" data-m="g"/>
+          <circle cx="60" cy="60" r="26" class="mring-bg"/><circle cx="60" cy="60" r="26" class="mring" data-m="l"/>
         </svg>
         <div class="ring-text"><b id="kcalVal">0</b><span id="kcalGoal">/ 3150 kcal</span><small id="kcalLeft"></small></div>
       </div>
@@ -333,17 +336,17 @@
       Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
       Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
     </div>
-    <p class="hint center">Coach Killian · v10.1 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v11 design 2026 · données stockées localement</p>
   </section>
 </main>
 
-<nav class="tabbar">
-  <button class="tab active" data-view="today"><span class="ti">◉</span>Aujourd'hui</button>
-  <button class="tab" data-view="add"><span class="ti">＋</span>Ajouter</button>
-  <button class="tab" data-view="recipes"><span class="ti">📖</span>Recettes</button>
-  <button class="tab" data-view="train"><span class="ti">🏋</span>Séance</button>
-  <button class="tab" data-view="progress"><span class="ti">📈</span>Progrès</button>
-  <button class="tab" data-view="settings"><span class="ti">⚙</span>Réglages</button>
+<nav class="tabbar" aria-label="Navigation principale">
+  <button class="tab active" data-view="today"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Aujourd'hui</button>
+  <button class="tab" data-view="add"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Ajouter</button>
+  <button class="tab" data-view="recipes"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M9 7h6"/></svg>Recettes</button>
+  <button class="tab" data-view="train"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Séance</button>
+  <button class="tab" data-view="progress"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Progrès</button>
+  <button class="tab" data-view="settings"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Réglages</button>
 </nav>
 
 <div class="sheet-backdrop" id="sheetBackdrop" hidden>
@@ -362,5 +365,11 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="app.js"></script>
+<script>
+/* design 2026 : anneaux de macros calqués sur les barres existantes + retour haptique */
+(function(){const sync=()=>document.querySelectorAll('.mring').forEach(c=>{const f=document.querySelector(`.bar[data-k=${c.dataset.m}] .fill`);const C=2*Math.PI*c.r.baseVal.value;const pct=f?parseFloat(f.style.width)||0:0;c.style.strokeDasharray=C;c.style.strokeDashoffset=C*(1-Math.min(pct,100)/100);});
+sync();document.querySelectorAll('.bar .fill').forEach(f=>new MutationObserver(sync).observe(f,{attributes:true,attributeFilter:['style']}));
+document.addEventListener('pointerdown',e=>{if(e.target.closest('.btn,.tab')&&navigator.vibrate)try{navigator.vibrate(8)}catch{}},{passive:true});})();
+</script>
 </body>
 </html>
