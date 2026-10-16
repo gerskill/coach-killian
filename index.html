@@ -79,7 +79,7 @@
     <div class="card">
       <h2>Photo du repas</h2>
       <p class="hint" id="photoHint">Prends ton assiette en photo : Claude reconnaît les aliments et estime les grammes et les macros. Tu peux tout corriger avant d'ajouter.</p>
-      <input id="photoPrecision" placeholder="Précision (optionnel) : ex. il y a 150 g de riz" autocomplete="off">
+      <input id="photoPrecision" aria-label="Précision sur la photo" placeholder="Précision (optionnel) : ex. il y a 150 g de riz" autocomplete="off">
       <label class="btn block mt8" for="photoInput">📷 Photo</label>
       <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
       <p class="hint" id="photoNoKey" style="margin:10px 0 0">Sans clé, la photo est gardée dans ton journal sans analyse. <a href="#settings" id="photoGoAI">Ajouter ma clé Claude</a></p>
@@ -88,14 +88,14 @@
     <div class="card">
       <h2>Rechercher un aliment</h2>
       <form class="row" id="searchForm">
-        <input type="search" id="searchInput" placeholder="ex. skyr, pain de mie, granola…" autocomplete="off">
+        <input type="search" id="searchInput" aria-label="Rechercher un aliment" placeholder="ex. skyr, pain de mie, granola…" autocomplete="off">
         <button class="btn" type="submit">Chercher</button>
       </form>
       <div class="row">
         <button class="btn ghost grow" id="scanBtn">▦ Scanner un code-barres</button>
       </div>
       <form class="row" id="barcodeForm">
-        <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Code-barres (taper ou dicter)" autocomplete="off">
+        <input type="text" id="barcodeInput" aria-label="Code-barres" inputmode="numeric" pattern="[0-9]*" placeholder="Code-barres (taper ou dicter)" autocomplete="off">
         <button class="mic-btn" type="button" id="barcodeMic" aria-label="Dicter le code-barres" aria-pressed="false">🎤</button>
         <button class="btn ghost" type="submit">OK</button>
       </form>
@@ -106,7 +106,7 @@
 
     <div class="card">
       <h2>Aliments de base <small class="muted">(hors ligne, pour 100 g)</small></h2>
-      <input type="search" id="baseFilter" placeholder="Filtrer…">
+      <input type="search" id="baseFilter" aria-label="Filtrer les aliments" placeholder="Filtrer…">
       <ul class="results" id="baseList"></ul>
     </div>
 
@@ -127,7 +127,7 @@
     <div class="card">
       <h2>Recettes</h2>
       <p class="hint">Tes plats, petits-déj et shakers avec les quantités. Choisis 3, 4 ou 7 portions pour le batch cooking.</p>
-      <input type="search" id="recipeFilter" placeholder="Chercher une recette ou un ingrédient…" autocomplete="off">
+      <input type="search" id="recipeFilter" aria-label="Chercher une recette" placeholder="Chercher une recette ou un ingrédient…" autocomplete="off">
       <div class="chips" id="recipeCats" style="margin-top:10px">
         <button class="chip active" data-rc="all">Toutes</button>
         <button class="chip" data-rc="plat">Plats</button>
@@ -142,12 +142,12 @@
       <div class="card">
         <div class="card-head"><h2>Liste de courses</h2><span class="muted shop-sum" id="shopSummary"></span></div>
         <form id="shopAddForm" autocomplete="off">
-          <input id="shopAddName" placeholder="Ajouter un article… (ex. skyr)" enterkeyhint="done">
+          <input id="shopAddName" aria-label="Article à ajouter" placeholder="Ajouter un article… (ex. skyr)" enterkeyhint="done">
           <div class="row mt8">
-            <input id="shopAddQty" class="shop-qty-in" placeholder="Qté (option.)">
+            <input id="shopAddQty" aria-label="Quantité" class="shop-qty-in" placeholder="Qté (option.)">
             <select id="shopAddCat" aria-label="Catégorie"></select>
           </div>
-          <input id="shopAddNewCat" placeholder="Nom de la nouvelle catégorie" hidden>
+          <input id="shopAddNewCat" aria-label="Nouvelle catégorie" placeholder="Nom de la nouvelle catégorie" hidden>
           <button class="btn block mt8" type="submit">＋ Ajouter à la liste</button>
         </form>
         <div class="row mt12">
@@ -181,8 +181,8 @@
         <p class="hint" style="margin-top:0">Corrige les noms et les quantités, retire ce qui est faux (✕) et ajoute ce qui manque.</p>
         <ul class="fr-ings" id="frIngList"></ul>
         <form class="row mt8" id="frIngAdd" autocomplete="off">
-          <input id="frIngName" placeholder="Ajouter un ingrédient">
-          <input id="frIngQty" class="fr-qte" placeholder="qté">
+          <input id="frIngName" aria-label="Ingrédient" placeholder="Ajouter un ingrédient">
+          <input id="frIngQty" aria-label="Quantité ingrédient" class="fr-qte" placeholder="qté">
           <button class="btn ghost" type="submit" aria-label="Ajouter">＋</button>
         </form>
         <button class="btn block" id="frRecipes">② Proposer des recettes</button>
@@ -228,8 +228,8 @@
       <div class="card-head"><h2>Poids de corps</h2><span class="muted" id="weightSummary"></span></div>
       <div id="weightChart" class="chart"></div>
       <form class="row" id="weightForm">
-        <input type="number" id="weightInput" step="0.1" min="30" max="200" inputmode="decimal" placeholder="Poids (kg)">
-        <input type="date" id="weightDate">
+        <input type="number" id="weightInput" aria-label="Poids en kg" step="0.1" min="30" max="200" inputmode="decimal" placeholder="Poids (kg)">
+        <input type="date" id="weightDate" aria-label="Date de la pesée">
         <button class="btn" type="submit">Ajouter</button>
       </form>
       <p class="hint">Pèse-toi une fois par semaine, le matin à jeun. Vise +0,25 à +0,5 kg par semaine.</p>
@@ -323,12 +323,17 @@
       <button class="btn danger block" id="resetBtn">Tout effacer</button>
     </div>
     <div class="card">
+      <h2>Confidentialité et santé</h2>
+      <p class="hint" style="margin:0">Tes données (repas, poids, séances, photos) restent sur cet appareil, dans le navigateur : rien n'est envoyé à un serveur Coach Killian. Seules les recherches de produits partent vers Open Food Facts, et les photos que tu choisis d'analyser partent vers l'API Claude (Anthropic) avec ta propre clé. « Tout effacer » supprime tout (LPD suisse / RGPD).<br>
+      Coach Killian donne des repères généraux de nutrition et d'entraînement : ce n'est pas un avis médical. En cas de douleur, de problème de santé ou de trouble alimentaire, parles-en à un médecin ou à un diététicien.</p>
+    </div>
+    <div class="card">
       <h2>Crédits</h2>
       <p class="hint" style="margin:0">Photos et descriptions d'exercices — Source : <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db ↗</a> (domaine public, Unlicense), technique traduite en français.<br>
       Scan des codes-barres sur iPhone : <a href="https://github.com/Sec-ant/barcode-detector" target="_blank" rel="noopener">barcode-detector ↗</a> et zxing-wasm (licence MIT).<br>
       Produits : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts ↗</a> (ODbL).</p>
     </div>
-    <p class="hint center">Coach Killian · v10 · données stockées localement</p>
+    <p class="hint center">Coach Killian · v10.1 · données stockées localement</p>
   </section>
 </main>
 
