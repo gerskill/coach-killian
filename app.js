@@ -323,11 +323,12 @@ function renderToday() {
     <li data-id="${e.id}">
       ${e.photo ? `<img class="thumb" src="${e.photo}" alt="" data-photo="${e.id}">` : ''}
       <div class="e-main"><div class="e-name">${esc(e.name)}</div>
-        <div class="e-sub">${new Date(e.t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${e.qty ? ' · ' + esc(e.qty) : ''} · P ${r0(e.p)} · G ${r0(e.g)} · L ${r0(e.l)}</div></div>
-      <div class="e-kcal">${fmt(e.kcal)}</div>
+        <div class="e-sub">${new Date(e.t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${e.qty ? ' · ' + esc(e.qty) : ''}</div>
+        <div class="mchips"><span class="mc p">P ${r0(e.p)}</span><span class="mc g">G ${r0(e.g)}</span><span class="mc l">L ${r0(e.l)}</span></div></div>
+      <div class="e-kcal">${fmt(e.kcal)}<small>kcal</small></div>
       <button class="star ${isFav(e) ? 'on' : ''}" data-star="${e.id}" aria-label="${isFav(e) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${isFav(e) ? '★' : '☆'}</button>
       <button class="del" data-del="${e.id}" aria-label="Supprimer">✕</button>
-    </li>`).join('') : '<li class="empty">Rien pour l\u2019instant. Ajoute ton premier repas !</li>';
+    </li>`).join('') : '<li class="empty"><span class="empty-ic"><svg class=\"i\" aria-hidden=\"true\"><use href=\"#i-book\"/></svg></span><b>Rien pour l\u2019instant</b><span>Ajoute ton premier repas avec l\u2019onglet Ajouter.</span></li>';
   renderWeekChart('#weekChart', curDate);
   renderShakerBtn(); renderBackupBanner(); renderFavs();
   $('#addFor').textContent = `Ajout pour : ${dateLabel(curDate).toLowerCase()} (${parseKey(curDate).toLocaleDateString('fr-FR')})`;
@@ -417,7 +418,7 @@ function openRecipe(id, mult = 1) {
       <span class="n">${esc(ingName(name, q, u, mult))}${note ? `<small>${esc(note)}</small>` : ''}</span></li>`).join('')}</ul>
     <h4>Étapes</h4>
     <ol class="steps">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-    ${r.note ? `<p class="r-note">💡 ${esc(r.note)}</p>` : ''}
+    ${r.note ? `<p class="r-note">${esc(r.note)}</p>` : ''}
     ${r.oats ? `<p class="r-note">🔄 ${esc(SANS_AVOINE)}</p>` : ''}
     ${r.keep ? `<p class="r-keep">🧊 <b>Conservation :</b> ${esc(r.keep)}</p>` : ''}
     ${r.mine ? `<p class="hint">🧊 Créée avec le Frigo le ${esc(parseKey(r.created || todayKey()).toLocaleDateString('fr-FR'))}.</p>` : ''}
@@ -749,7 +750,7 @@ function renderPresets() {
       <span class="cat">${esc(p.e || '🍽️')}</span>
       <b>${esc(p.name)}</b>
       <span>${fmt(p.kcal * m)} kcal · ${r0(p.p * m)} g prot.</span>
-      ${recipeById(p.id) ? `<span class="rlink" data-recipe="${p.id}" role="button" aria-label="Voir la recette">📖</span>` : ''}</button>`;
+      ${recipeById(p.id) ? `<span class="rlink" data-recipe="${p.id}" role="button" aria-label="Voir la recette"><svg class="i" aria-hidden="true"><use href="#i-book"/></svg></span>` : ''}</button>`;
   }).join('');
   $('#presetAdmin').innerHTML = S.presets.map(p => `
     <li><div class="e-main"><div class="e-name">${esc(p.e || '')} ${esc(p.name)}</div>
@@ -1622,7 +1623,7 @@ function renderFrigoResults() {
       <ul class="ing">${r.ing.map(i => `<li><span class="q">${i.grammes ? `${i.grammes} g` : esc(i.texte || 'au goût')}</span><span class="n">${esc(i.nom)}${i.grammes && i.texte ? `<small>${esc(i.texte)}</small>` : ''}</span></li>`).join('')}</ul>
       <h4>Étapes</h4>
       <ol class="steps">${r.etapes.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-      ${r.conseil ? `<p class="r-note">💡 ${esc(r.conseil)}</p>` : ''}
+      ${r.conseil ? `<p class="r-note">${esc(r.conseil)}</p>` : ''}
       ${r.manquants.length ? `<p class="r-keep">🛒 <b>Pour l\u2019améliorer :</b> ${r.manquants.map(m => esc(m.nom + (m.quantite ? ` (${m.quantite})` : ''))).join(', ')}</p>
         <button class="btn ghost block" data-frmiss="${k}">🛒 Ajouter les manquants à la liste de courses</button>` : ''}
       <button class="btn block mt8" data-fradd="${k}">＋ Ajouter ${isToday ? 'à aujourd\u2019hui' : 'au ' + esc(parseKey(curDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))}</button>
@@ -2132,7 +2133,7 @@ function renderWarmup() {
     el.innerHTML = `<div class="warm-done"><span>${all ? '✓ Échauffement fait' : 'Échauffement passé'}</span><button class="btn small ghost" data-warm="reset">Refaire</button></div>`; return;
   }
   el.innerHTML = `<div class="warm">
-    <div class="card-head"><h3>🔥 Échauffement (≈ 8 min)</h3>${w.on ? `<span class="muted">${done.length}/${P.items.length}</span>` : ''}</div>
+    <div class="card-head"><h3><svg class="i" aria-hidden="true"><use href="#i-flame"/></svg> Échauffement (≈ 8 min)</h3>${w.on ? `<span class="muted">${done.length}/${P.items.length}</span>` : ''}</div>
     <p class="hint">5 min d\u2019échauffement général, puis 2 séries d\u2019approche sur le ${esc(P.lift.toLowerCase())}${P.work ? ` (charge de travail : ${nb(P.work)} kg)` : ''}.</p>
     <ul class="warm-list">${P.items.map((t, i) => `<li><label class="${done.includes(i) ? 'on' : ''}">${w.on ? `<input type="checkbox" data-wi="${i}" ${done.includes(i) ? 'checked' : ''}>` : `<span class="wnum">${i + 1}</span>`}<span>${esc(t)}</span></label>${i === P.nGen - 1 ? '' : ''}</li>`).join('')}</ul>
     ${w.on ? '' : '<div class="row"><button class="btn grow" data-warm="start">▶ Commencer</button><button class="btn ghost" data-warm="skip">Passer</button></div>'}
@@ -2145,7 +2146,7 @@ function renderShakerBtn() {
   const p = shakerPreset(), b = $('#shakerBtn'); if (!b) return;
   b.hidden = !p; if (!p) return;
   const n = entries().filter(e => e.name === p.name).length;
-  b.innerHTML = `<span>${esc(p.e || '🥤')} ${esc(p.name)}</span><small>${fmt(p.kcal)} kcal · ${r0(p.p)} g prot.${n ? ` · déjà ${n}× ${curDate === todayKey() ? 'aujourd\u2019hui' : 'ce jour'}` : ''}</small>`;
+  b.innerHTML = `<span><svg class="i" aria-hidden="true"><use href="#i-cup"/></svg> ${esc(p.name)}</span><small>${fmt(p.kcal)} kcal · ${r0(p.p)} g prot.${n ? ` · déjà ${n}× ${curDate === todayKey() ? 'aujourd\u2019hui' : 'ce jour'}` : ''}</small>`;
 }
 function renderShakerSettings() {
   const p = shakerPreset(), sel = $('#shakerSel'); if (!sel) return;
@@ -2172,7 +2173,7 @@ function renderFavs() {
     : '<p class="hint" style="grid-column:span 2;margin:0">Touche ☆ sur un repas de ton journal ou dans une recette pour l\u2019avoir ici en 1 tap.</p>';
   const y = entries(addDays(curDate, -1)), b = $('#redoYesterday');
   b.disabled = !y.length;
-  b.textContent = y.length ? `↻ Refaire hier (${y.length} repas · ${fmt(y.reduce((a, e) => a + e.kcal, 0))} kcal)` : '↻ Refaire hier (rien d\u2019enregistré hier)';
+  b.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> ' + (y.length ? `Refaire hier (${y.length} repas · ${fmt(y.reduce((a, e) => a + e.kcal, 0))} kcal)` : 'Refaire hier (rien d\u2019enregistré hier)');
 }
 function redoYesterday() {
   const y = entries(addDays(curDate, -1)); if (!y.length) return;
@@ -2213,7 +2214,7 @@ function renderReview() {
   const G = S.goals, R = weeklyReview(), sg = n => (n >= 0 ? '+' : '') + nb(r1(n));
   const pct = (v, g) => (g ? r0(v / g * 100) : 0);
   const wt = R.w14 || R.w7;
-  el.innerHTML = `<div class="card-head"><h2>📋 Bilan de la semaine</h2><span class="muted shop-sum">${esc(parseKey(addDays(todayKey(), -6)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} → aujourd\u2019hui</span></div>
+  el.innerHTML = `<div class="card-head"><h2><svg class="i" aria-hidden="true"><use href="#i-trend"/></svg> Bilan de la semaine</h2><span class="muted shop-sum">${esc(parseKey(addDays(todayKey(), -6)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} → aujourd\u2019hui</span></div>
     <div class="stats">
       <div class="stat ${R.avgK >= G.kcal * 0.95 ? 'good' : ''}"><b>${fmt(R.avgK)}</b><span>kcal / jour · ${pct(R.avgK, G.kcal)} % de ${fmt(G.kcal)}</span></div>
       <div class="stat ${R.avgP >= G.p * 0.95 ? 'good' : ''}"><b>${r0(R.avgP)} g</b><span>protéines / jour · ${pct(R.avgP, G.p)} % de ${G.p} g</span></div>
@@ -2221,7 +2222,7 @@ function renderReview() {
       <div class="stat ${R.sessions >= 3 ? 'good' : ''}"><b>${R.sessions}</b><span>séance${R.sessions > 1 ? 's' : ''} (cible 3)</span></div>
       <div class="stat span2"><b>${wt ? `${nb(wt.from.kg)} → ${nb(wt.to.kg)} kg` : '–'}</b><span>${wt ? `${sg(wt.delta)} kg en ${r0(wt.span)} j · ${(wt.perWeek >= 0 ? '+' : '') + nb(Math.round(wt.perWeek * 100) / 100)} kg/semaine` : 'Pèse-toi au moins 2 fois à une semaine d\u2019écart pour voir la tendance'}</span></div>
     </div>
-    <p class="review-tip">💡 ${esc(R.tip)}</p>
+    <p class="review-tip">${esc(R.tip)}</p>
     ${R.suggest ? `<button class="btn block" id="applyBump">＋200 kcal par jour (${fmt(G.kcal)} → ${fmt(G.kcal + 200)} kcal)</button>` : ''}
     <p class="hint" style="margin:8px 0 0">Moyennes sur les jours remplis (${R.filled}/7). Objectif atteint = au moins 95 % des kcal et des protéines.</p>`;
   const b = $('#applyBump');
@@ -2428,8 +2429,8 @@ function renderBackupBanner() {
   b.hidden = !backupDue(); if (b.hidden) return;
   b.className = 'card banner';
   const last = S.lastBackup ? `Dernière sauvegarde : ${esc(new Date(S.lastBackup).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }))}.` : 'Aucune sauvegarde dans un fichier pour l\u2019instant.';
-  b.innerHTML = `<b>💾 Sauvegarde de la semaine</b><p>${last} Enregistre une copie dans Fichiers ou iCloud Drive : si iOS efface l\u2019appli, tu ne perds rien.</p>
-    <div class="row"><button class="btn grow" id="bnSave">💾 Sauvegarder</button><button class="btn ghost" id="bnLater">Plus tard</button></div>`;
+  b.innerHTML = `<span class="bn-ic"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg></span><span class="bn-txt"><b>Sauvegarde</b><small>${last}</small></span>
+    <button class="btn small" id="bnSave">Sauvegarder</button><button class="bn-x" id="bnLater" aria-label="Plus tard"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>`;
   $('#bnSave').onclick = () => shareBackup(false);
   $('#bnLater').onclick = () => { S.backupSnooze = Date.now() + 2 * 864e5; save(); renderBackupBanner(); };
 }

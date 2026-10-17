@@ -1,7 +1,7 @@
 /* Coach Killian – service worker : app shell en cache, Open Food Facts en réseau */
-const CACHE = 'coach-killian-v12';
+const CACHE = 'coach-killian-v13';
 const SHELL = [
-  './', './index.html', './style.css', './app.js', './manifest.json',
+  './', './index.html', './style.css', './app.js', './design.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
   // lecteur de codes-barres pour iPhone (polyfill + wasm locaux, utilisables hors ligne)
   './vendor/barcode-detector/barcode-detector.ponyfill.js', './vendor/barcode-detector/zxing_reader.wasm',
