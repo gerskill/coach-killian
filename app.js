@@ -1865,6 +1865,27 @@ function lastPerf(name) {
   }
   return null;
 }
+
+/* ---------- ⏱ Durée estimée (échauffement + séance, repos compris) ----------
+ * Hypothèses prudentes : 60 s par série (120 s pour un exercice unilatéral « / jambe »),
+ * repos du minuteur après chaque série sauf la toute dernière, 90 s pour passer d'un exercice à l'autre. */
+const EST = { set: 60, uniSet: 120, change: 90 };
+function warmupSeconds() { return 300 + 2 * EST.set + 60 + 90 + EST.change; } // 5 min général + 2 séries d'approche + pauses
+function sessionSeconds(type, draft, onlyLeft) {
+  const ex = draft && draft.type === type ? draft.ex : WORKOUTS[type].map(e => ({ name: e.name, sets: Array.from({ length: e.sets }, () => ({ ok: false })) }));
+  const def = WORKOUTS[type] || [];
+  let t = 0, last = -1;
+  ex.forEach((e, i) => e.sets.forEach(() => { last = i; }));
+  ex.forEach((e, i) => {
+    const uni = /jambe/.test((def[i] || {}).target || '');
+    const sets = onlyLeft ? e.sets.filter(s => !s.ok) : e.sets;
+    if (!sets.length) return;
+    t += sets.length * (uni ? EST.uniSet : EST.set) + sets.length * restFor(e.name) + EST.change;
+    if (i === last) t -= restFor(e.name);
+  });
+  return Math.max(0, t);
+}
+const hmin = s => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
 const setTxt = s => (s.w ? `${String(s.w).replace('.', ',')} kg×${s.r}` : `${s.r} reps`);
 function renderTrain() {
   if (!S.draft) { S.draft = newDraft(suggestedType()); save(); }
@@ -1874,6 +1895,10 @@ function renderTrain() {
   $('#sessionHint').textContent = lw
     ? `Dernière séance : ${lw.type} (${dateLabel(lw.date).toLowerCase()}). Séance conseillée : ${sug}.`
     : 'Première séance : on commence par la A. Ensuite tu alternes A / B, un jour sur deux.';
+  { const w = d.warm || {}, warmLeft = (w.skip || (w.done || []).length >= warmupPlan(d.type).items.length) ? 0 : warmupSeconds();
+    const total = warmupSeconds() + sessionSeconds(d.type), left = warmLeft + sessionSeconds(d.type, d, true);
+    let el = $('#sessionDur'); if (!el) { el = document.createElement('p'); el.id = 'sessionDur'; el.className = 'sess-dur'; $('#sessionHint').after(el); }
+    el.innerHTML = `<span><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg> Durée estimée : <b>≈ ${hmin(total)}</b> avec l\u2019échauffement</span>${left < total ? `<span class="muted">reste ≈ ${hmin(left)}</span>` : ''}`; }
   $('#sessionExercises').innerHTML = d.ex.map((ex, i) => {
     const meta = def[i] || { target: '' }, lp = lastPerf(ex.name), exB = exByName(ex.name);
     return `<div class="ex" data-ex="${i}">
@@ -2122,8 +2147,8 @@ function warmupPlan(type, draft = S.draft) {
   const rd = v => Math.max(W.min || 0, Math.round(v / W.step) * W.step);
   const perHand = W.step === 1 ? ' par haltère' : '';
   const sets = work
-    ? [`Série d\u2019approche 1 : ${nb(rd(work * 0.5))} kg${perHand} × 8 (50 %), puis 1 min de pause`, `Série d\u2019approche 2 : ${nb(rd(work * 0.75))} kg${perHand} × 4 (75 %), puis 1 à 2 min de pause`]
-    : ['Série d\u2019approche 1 : 50 % de ta charge de travail × 8, puis 1 min de pause', 'Série d\u2019approche 2 : 75 % de ta charge de travail × 4, puis 1 à 2 min de pause'];
+    ? [`Série d\u2019approche 1 : ${nb(rd(work * 0.5))} kg${perHand} × 8 (50 %), puis 1 min de pause`, `Série d\u2019approche 2 : ${nb(rd(work * 0.75))} kg${perHand} × 4 (75 %), puis 1 min 30 de pause`]
+    : ['Série d\u2019approche 1 : 50 % de ta charge de travail × 8, puis 1 min de pause', 'Série d\u2019approche 2 : 75 % de ta charge de travail × 4, puis 1 min 30 de pause'];
   return { lift: W.lift, work, items: [...W.gen, ...sets], nGen: W.gen.length };
 }
 function renderWarmup() {
@@ -2133,7 +2158,7 @@ function renderWarmup() {
     el.innerHTML = `<div class="warm-done"><span>${all ? '✓ Échauffement fait' : 'Échauffement passé'}</span><button class="btn small ghost" data-warm="reset">Refaire</button></div>`; return;
   }
   el.innerHTML = `<div class="warm">
-    <div class="card-head"><h3><svg class="i" aria-hidden="true"><use href="#i-flame"/></svg> Échauffement (≈ 8 min)</h3>${w.on ? `<span class="muted">${done.length}/${P.items.length}</span>` : ''}</div>
+    <div class="card-head"><h3><svg class="i" aria-hidden="true"><use href="#i-flame"/></svg> Échauffement (≈ ${Math.round(warmupSeconds() / 60)} min)</h3>${w.on ? `<span class="muted">${done.length}/${P.items.length}</span>` : ''}</div>
     <p class="hint">5 min d\u2019échauffement général, puis 2 séries d\u2019approche sur le ${esc(P.lift.toLowerCase())}${P.work ? ` (charge de travail : ${nb(P.work)} kg)` : ''}.</p>
     <ul class="warm-list">${P.items.map((t, i) => `<li><label class="${done.includes(i) ? 'on' : ''}">${w.on ? `<input type="checkbox" data-wi="${i}" ${done.includes(i) ? 'checked' : ''}>` : `<span class="wnum">${i + 1}</span>`}<span>${esc(t)}</span></label>${i === P.nGen - 1 ? '' : ''}</li>`).join('')}</ul>
     ${w.on ? '' : '<div class="row"><button class="btn grow" data-warm="start">▶ Commencer</button><button class="btn ghost" data-warm="skip">Passer</button></div>'}
@@ -2696,4 +2721,4 @@ else dailySnapshot();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e)));
 }
-window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, get frigo() { return FR; }, frigoDetectPrompt, frigoRecipePrompt, normalizeRecipes, parseSpokenDigits, eanValid, restFor, epley, exHistory, detectPRs, warmupPlan, weeklyReview, normalizePhysique, physiquePrompt, stripBF, dailySnapshot, idbAll, shareBackup, get persist() { return persistState; }, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests
+window.CoachKillian = { analyzePhoto, buildAIRequest, extractJSON, normalizeAI, get state() { return S; }, get courses() { return C; }, get frigo() { return FR; }, frigoDetectPrompt, frigoRecipePrompt, normalizeRecipes, parseSpokenDigits, eanValid, restFor, sessionSeconds, warmupSeconds, epley, exHistory, detectPRs, warmupPlan, weeklyReview, normalizePhysique, physiquePrompt, stripBF, dailySnapshot, idbAll, shareBackup, get persist() { return persistState; }, getBarcodeDetector, loadBarcodePolyfill }; // pour le débogage / les tests

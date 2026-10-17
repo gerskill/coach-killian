@@ -1,5 +1,5 @@
 /* Coach Killian – service worker : app shell en cache, Open Food Facts en réseau */
-const CACHE = 'coach-killian-v13';
+const CACHE = 'coach-killian-v14';
 const SHELL = [
   './', './index.html', './style.css', './app.js', './design.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
